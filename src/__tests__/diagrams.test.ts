@@ -1,0 +1,509 @@
+import { buildApp } from '../app';
+import { getAuthToken, authHeaders } from './testHelpers';
+
+describe('Diagrams, Networks & Precedences API', () => {
+  function app() {
+    return buildApp();
+  }
+
+  async function createBuilding(a: ReturnType<typeof app>, token: string) {
+    const res = await a.inject({
+      method: 'POST',
+      url: '/buildings',
+      headers: authHeaders(token),
+      payload: { name: 'Test', firstDate: '2024-01-01' },
+    });
+    return res.json().id as string;
+  }
+
+  async function createDiagram(a: ReturnType<typeof app>, token: string, buildingId: string, name: string) {
+    const res = await a.inject({
+      method: 'POST',
+      url: `/buildings/${buildingId}/diagrams`,
+      headers: authHeaders(token),
+      payload: { name },
+    });
+    return res.json() as { id: string; name: string; networks: any[]; precedences: any[] };
+  }
+
+  async function createNetwork(a: ReturnType<typeof app>, token: string, buildingId: string, diagramId: string, name: string) {
+    const res = await a.inject({
+      method: 'POST',
+      url: `/buildings/${buildingId}/diagrams/${diagramId}/networks`,
+      headers: authHeaders(token),
+      payload: { name },
+    });
+    return res.json() as { id: string; name: string; stages: any[] };
+  }
+
+  async function addStage(a: ReturnType<typeof app>, token: string, buildingId: string, diagramId: string, networkId: string, name: string, duration: number, latency = 0) {
+    const res = await a.inject({
+      method: 'POST',
+      url: `/buildings/${buildingId}/diagrams/${diagramId}/networks/${networkId}/stages`,
+      headers: authHeaders(token),
+      payload: { name, duration, latency },
+    });
+    return res.json() as { id: string; name: string; duration: number; latency: number };
+  }
+
+  async function addPrecedence(a: ReturnType<typeof app>, token: string, buildingId: string, diagramId: string, sourceStageId: string, destinationStageId: string, opening = 0, latency = 0) {
+    return a.inject({
+      method: 'POST',
+      url: `/buildings/${buildingId}/diagrams/${diagramId}/precedences`,
+      headers: authHeaders(token),
+      payload: { sourceStageId, destinationStageId, opening, latency },
+    });
+  }
+
+  // === Diagrams ===
+
+  describe('Diagrams', () => {
+    it('GET /diagrams should return empty array', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const res = await a.inject({ method: 'GET', url: `/buildings/${bid}/diagrams`, headers: authHeaders(token) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual([]);
+    });
+
+    it('POST /diagrams should create a diagram without networks', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const res = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/diagrams`,
+        headers: authHeaders(token),
+        payload: { name: 'Processo' },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().name).toBe('Processo');
+      expect(res.json().networks).toEqual([]);
+      expect(res.json().precedences).toEqual([]);
+    });
+
+    it('GET /diagrams should list diagrams', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      await createDiagram(a, token, bid, 'D1');
+      await createDiagram(a, token, bid, 'D2');
+      const res = await a.inject({ method: 'GET', url: `/buildings/${bid}/diagrams`, headers: authHeaders(token) });
+      expect(res.json()).toHaveLength(2);
+    });
+  });
+
+  // === Networks ===
+
+  describe('Networks', () => {
+    it('POST /networks should create a network in a diagram', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+
+      const res = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks`,
+        headers: authHeaders(token),
+        payload: { name: 'Rede Principal' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json().name).toBe('Rede Principal');
+      expect(res.json().stages).toEqual([]);
+    });
+
+    it('GET /networks should list networks of a diagram', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      await createNetwork(a, token, bid, diagram.id, 'Rede 1');
+      await createNetwork(a, token, bid, diagram.id, 'Rede 2');
+
+      const res = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks`,
+        headers: authHeaders(token),
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toHaveLength(2);
+    });
+
+    it('GET /diagrams/:id should include networks in response', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      await createNetwork(a, token, bid, diagram.id, 'Rede A');
+
+      const res = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+
+      expect(res.json().networks).toHaveLength(1);
+      expect(res.json().networks[0].name).toBe('Rede A');
+    });
+
+    it('POST /stages should add a stage to a specific network', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+
+      const res = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages`,
+        headers: authHeaders(token),
+        payload: { name: 'Estrutura', duration: 12, latency: 0 },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json().name).toBe('Estrutura');
+      expect(res.json().duration).toBe(12);
+    });
+
+    it('GET /diagrams/:id should show stages inside their network', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      await addStage(a, token, bid, diagram.id, network.id, 'Fundação', 8);
+      await addStage(a, token, bid, diagram.id, network.id, 'Estrutura', 12);
+
+      const res = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+
+      expect(res.json().networks[0].stages).toHaveLength(2);
+      expect(res.json().networks[0].stages[0].name).toBe('Fundação');
+      expect(res.json().networks[0].stages[1].name).toBe('Estrutura');
+    });
+
+    it('POST /stages should return 404 for invalid network', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+
+      const res = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/nonexistent/stages`,
+        headers: authHeaders(token),
+        payload: { name: 'X', duration: 5 },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  // === Precedences ===
+
+  describe('Precedences', () => {
+    it('POST /precedences should create a valid precedence', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'B', 8);
+
+      const res = await addPrecedence(a, token, bid, diagram.id, stageA.id, stageB.id, 0, 4);
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json().sourceStageId).toBe(stageA.id);
+      expect(res.json().destinationStageId).toBe(stageB.id);
+      expect(res.json().latency).toBe(4);
+    });
+
+    it('GET /diagrams/:id should include precedences', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'B', 8);
+      await addPrecedence(a, token, bid, diagram.id, stageA.id, stageB.id);
+
+      const res = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+
+      expect(res.json().precedences).toHaveLength(1);
+      expect(res.json().precedences[0].sourceStageId).toBe(stageA.id);
+      expect(res.json().precedences[0].destinationStageId).toBe(stageB.id);
+    });
+
+    it('POST /precedences should return 400 for nonexistent stage', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+
+      const res = await addPrecedence(a, token, bid, diagram.id, stageA.id, 'nonexistent');
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('POST /precedences should return 400 for self-reference', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+
+      const res = await addPrecedence(a, token, bid, diagram.id, stageA.id, stageA.id);
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('POST /precedences should return 400 for cycle (A→B→C→A)', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Processo');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'B', 8);
+      const stageC = await addStage(a, token, bid, diagram.id, network.id, 'C', 6);
+
+      await addPrecedence(a, token, bid, diagram.id, stageA.id, stageB.id);
+      await addPrecedence(a, token, bid, diagram.id, stageB.id, stageC.id);
+      const res = await addPrecedence(a, token, bid, diagram.id, stageC.id, stageA.id); // cycle!
+
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  async function createFullDiagram(a: ReturnType<typeof app>, token: string, buildingId: string) {
+    const diagram = await createDiagram(a, token, buildingId, 'Full Diagram');
+    const network = await createNetwork(a, token, buildingId, diagram.id, 'Main Network');
+    const stage = await addStage(a, token, buildingId, diagram.id, network.id, 'Stage A', 10);
+    return { diagram, network, stage };
+  }
+
+  // === New endpoints ===
+
+  describe('Stage impact', () => {
+    it('should return stage impact', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const { diagram, network, stage } = await createFullDiagram(a, token, bid);
+
+      const res = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages/${stage.id}/impact`,
+        headers: authHeaders(token),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(typeof body.packageCount).toBe('number');
+      expect(typeof body.teamCount).toBe('number');
+    });
+  });
+
+  describe('Delete stage', () => {
+    it('should delete a stage', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const { diagram, network, stage } = await createFullDiagram(a, token, bid);
+
+      const deleteRes = await a.inject({
+        method: 'DELETE',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages/${stage.id}`,
+        headers: authHeaders(token),
+      });
+      expect(deleteRes.statusCode).toBe(204);
+
+      const getRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+      const stageIds = getRes.json().networks[0].stages.map((s: any) => s.id);
+      expect(stageIds).not.toContain(stage.id);
+    });
+  });
+
+  describe('Patch stage', () => {
+    it('should patch a stage name and duration', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const { diagram, network, stage } = await createFullDiagram(a, token, bid);
+
+      const patchRes = await a.inject({
+        method: 'PATCH',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages/${stage.id}`,
+        headers: authHeaders(token),
+        payload: { name: 'New Name', duration: 8 },
+      });
+
+      expect(patchRes.statusCode).toBe(200);
+      expect(patchRes.json().name).toBe('New Name');
+      expect(patchRes.json().duration).toBe(8);
+    });
+  });
+
+  describe('Delete precedence', () => {
+    it('should delete a precedence', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Prec Diagram');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'B', 8);
+      const precRes = await addPrecedence(a, token, bid, diagram.id, stageA.id, stageB.id);
+      expect(precRes.statusCode).toBe(201);
+      const precedenceId = precRes.json().id as string;
+
+      const deleteRes = await a.inject({
+        method: 'DELETE',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/precedences/${precedenceId}`,
+        headers: authHeaders(token),
+      });
+      expect(deleteRes.statusCode).toBe(204);
+
+      const getRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+      const precIds = getRes.json().precedences.map((p: any) => p.id);
+      expect(precIds).not.toContain(precedenceId);
+    });
+  });
+
+  describe('Patch precedence', () => {
+    it('should patch a precedence latency', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const diagram = await createDiagram(a, token, bid, 'Prec Diagram');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'A', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'B', 8);
+      const precRes = await addPrecedence(a, token, bid, diagram.id, stageA.id, stageB.id, 0, 0);
+      expect(precRes.statusCode).toBe(201);
+      const precedenceId = precRes.json().id as string;
+
+      const patchRes = await a.inject({
+        method: 'PATCH',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/precedences/${precedenceId}`,
+        headers: authHeaders(token),
+        payload: { latency: 5 },
+      });
+
+      expect(patchRes.statusCode).toBe(200);
+      expect(patchRes.json().latency).toBe(5);
+    });
+  });
+
+  describe('Delete diagram', () => {
+    it('should delete a diagram', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+      const { diagram } = await createFullDiagram(a, token, bid);
+
+      const deleteRes = await a.inject({
+        method: 'DELETE',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+      expect(deleteRes.statusCode).toBe(204);
+
+      const listRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams`,
+        headers: authHeaders(token),
+      });
+      expect(listRes.json()).toEqual([]);
+    });
+  });
+
+  // === Cenário Completo: 2 Diagrams, cada um com network + stages + precedences ===
+
+  describe('Integration: 2 diagrams with networks, stages and precedences', () => {
+    it('should create 2 diagrams each with 1 network, 3 stages and 2 precedences', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+
+      // --- Diagram 1: Fundações ---
+      const d1 = await createDiagram(a, token, bid, 'Fundações');
+      const n1 = await createNetwork(a, token, bid, d1.id, 'Rede Fundações');
+      const s1a = await addStage(a, token, bid, d1.id, n1.id, 'Escavação', 10);
+      const s1b = await addStage(a, token, bid, d1.id, n1.id, 'Forma', 8, 2);
+      const s1c = await addStage(a, token, bid, d1.id, n1.id, 'Concretagem', 6);
+
+      const p1ab = await addPrecedence(a, token, bid, d1.id, s1a.id, s1b.id, 0, 4);
+      expect(p1ab.statusCode).toBe(201);
+      const p1bc = await addPrecedence(a, token, bid, d1.id, s1b.id, s1c.id, 1, 0);
+      expect(p1bc.statusCode).toBe(201);
+
+      // --- Diagram 2: Acabamentos ---
+      const d2 = await createDiagram(a, token, bid, 'Acabamentos');
+      const n2 = await createNetwork(a, token, bid, d2.id, 'Rede Acabamentos');
+      const s2a = await addStage(a, token, bid, d2.id, n2.id, 'Reboco', 12);
+      const s2b = await addStage(a, token, bid, d2.id, n2.id, 'Pintura', 8);
+      const s2c = await addStage(a, token, bid, d2.id, n2.id, 'Piso', 10);
+
+      const p2ab = await addPrecedence(a, token, bid, d2.id, s2a.id, s2b.id);
+      expect(p2ab.statusCode).toBe(201);
+      const p2ac = await addPrecedence(a, token, bid, d2.id, s2a.id, s2c.id);
+      expect(p2ac.statusCode).toBe(201);
+
+      // --- Verificar Diagram 1 completo ---
+      const res1 = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${d1.id}`,
+        headers: authHeaders(token),
+      });
+      const diagram1 = res1.json();
+      expect(diagram1.networks).toHaveLength(1);
+      expect(diagram1.networks[0].stages).toHaveLength(3);
+      expect(diagram1.precedences).toHaveLength(2);
+      expect(diagram1.networks[0].stages.map((s: any) => s.name)).toEqual(['Escavação', 'Forma', 'Concretagem']);
+
+      // --- Verificar Diagram 2 completo ---
+      const res2 = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${d2.id}`,
+        headers: authHeaders(token),
+      });
+      const diagram2 = res2.json();
+      expect(diagram2.networks).toHaveLength(1);
+      expect(diagram2.networks[0].stages).toHaveLength(3);
+      expect(diagram2.precedences).toHaveLength(2);
+
+      // --- Listar todos os diagrams ---
+      const allRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams`,
+        headers: authHeaders(token),
+      });
+      expect(allRes.json()).toHaveLength(2);
+    });
+  });
+});
