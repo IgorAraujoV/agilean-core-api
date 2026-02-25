@@ -154,13 +154,19 @@ Para adicionar novo contexto global, expandir `AppContext` em `app.ts`.
 - `DatabaseService.ts` executa `schema.sql`, depois roda migrações e seed do master user
 - Migrações usam `PRAGMA table_info()` para verificar se coluna já existe antes de `ALTER TABLE`
 
-## Dependência Local
+## Dependência Local (git submodule)
 
-O server depende de `agilean` via `file:../agilean`. Se o model mudar:
+O server depende de `agilean` via git submodule (`"agilean": "file:./agilean"` em `package.json`).
 
 ```bash
-cd ../agilean && npm run build
-cd ../server && npm test
+# Após clonar o server pela primeira vez:
+git submodule update --init
+cd agilean && npm install && npm run build
+cd .. && npm install
+
+# Para atualizar o submodule quando o model mudar:
+cd agilean && git pull origin <branch> && npm run build
+cd .. && npm install && npm test
 ```
 
 ## O que NÃO existe (ainda)
