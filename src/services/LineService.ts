@@ -104,6 +104,17 @@ export class LineService {
     return result;
   }
 
+  delete(buildingId: string, lineId: string): boolean {
+    const building = this.storage.get(buildingId);
+    if (!building) return false;
+    const line = building.getLine(lineId);
+    if (!line) return false;
+
+    building.removeLine(lineId);
+    this.repo.delete(lineId);
+    return true;
+  }
+
   private findNetwork(building: ReturnType<BuildingStorage['get']>, networkId: string): Network | null {
     if (!building) return null;
     for (const diagram of building.allDiagrams()) {

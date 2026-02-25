@@ -52,6 +52,27 @@ export async function lineRoutes(app: FastifyInstance): Promise<void> {
     return service.list(buildingId);
   });
 
+  app.delete('/buildings/:buildingId/lines/:lineId', {
+    schema: {
+      tags: ['Lines'],
+      summary: 'Deletar uma line e toda sua cascata (teams, packages, links)',
+      params: { type: 'object', required: ['buildingId', 'lineId'],
+        properties: { buildingId: { type: 'string' }, lineId: { type: 'string' } } },
+      response: {
+        204: { type: 'null' },
+        404: { type: 'object', properties: { error: { type: 'string' } } },
+      },
+    },
+  }, async (request, reply) => {
+    const { buildingId, lineId } = request.params as { buildingId: string; lineId: string };
+    if (!app.ctx.getBuilding(buildingId, request.user.userId)) {
+      return reply.status(404).send({ error: 'Building ou line não encontrado' });
+    }
+    const deleted = service.delete(buildingId, lineId);
+    if (!deleted) return reply.status(404).send({ error: 'Building ou line não encontrado' });
+    return reply.status(204).send();
+  });
+
   app.get('/buildings/:buildingId/lines/:lineId/packages', {
     schema: {
       tags: ['Lines'],

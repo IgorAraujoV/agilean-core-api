@@ -82,4 +82,8 @@ export class LineRepository {
 
     insertAll();
   }
+
+  delete(lineId: string): void {
+    this.db.prepare('DELETE FROM lines WHERE id = ?').run(lineId);
+  }
 }

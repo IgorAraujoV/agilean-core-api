@@ -176,25 +176,27 @@ export class BuildingLoader {
       const line = building.getLine(tRow.lineId);
       if (!line) continue;
       const team = new Team(tRow.stageId, tRow.id, tRow.position, line, []);
-      building.registerTeam(team);
+      line.addTeam(team);
     }
 
     // Load Packages
     const packages = this.db.prepare(`
       SELECT pk.id, pk.team_id AS teamId, pk.place_id AS placeId,
+             pk.stage_id AS stageId,
              pk.start_col AS startCol, pk.end_col AS endCol, pk.code
       FROM packages pk
       JOIN teams t ON t.id = pk.team_id
       JOIN lines l ON l.id = t.line_id
       WHERE l.building_id = ?
       ORDER BY pk.team_id, pk.start_col
-    `).all(buildingId) as { id: string; teamId: string; placeId: string; startCol: number; endCol: number; code: string }[];
+    `).all(buildingId) as { id: string; teamId: string; placeId: string; stageId: string; startCol: number; endCol: number; code: string }[];
 
     for (const pRow of packages) {
       const team = building.getTeam(pRow.teamId);
       if (!team) continue;
       const duration = pRow.endCol - pRow.startCol + 1;
       const pkg = Package.createPackage(pRow.placeId, team, pRow.code ?? '', duration, pRow.id);
+      pkg.setStageId(pRow.stageId);
       // Set exact column positions from DB
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pkg as any)._start = pRow.startCol;
