@@ -1,0 +1,3 @@
+[submodule "agilean"]
+	path = agilean
+	url = git@github.com:IgorAraujoV/agilean-core.git

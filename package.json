@@ -15,7 +15,7 @@
     "@fastify/jwt": "^10.0.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.5",
-    "agilean": "file:../agilean",
+    "agilean": "file:./agilean",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
     "fastify": "^5.2.1",
