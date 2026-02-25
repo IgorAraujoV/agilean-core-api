@@ -5,6 +5,7 @@ import { LineService } from '../services/LineService';
 const CreateLineSchema = z.object({
   networkId: z.string().min(1),
   placeId: z.string().min(1),
+  localIds: z.array(z.string().min(1)).optional(),
 });
 
 export async function lineRoutes(app: FastifyInstance): Promise<void> {
@@ -29,7 +30,7 @@ export async function lineRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(404).send({ error: 'Building, network ou place não encontrado' });
     }
     const input = CreateLineSchema.parse(request.body);
-    const result = service.create(buildingId, input.networkId, input.placeId);
+    const result = service.create(buildingId, input.networkId, input.placeId, input.localIds);
     if (!result) return reply.status(404).send({ error: 'Building, network ou place não encontrado' });
     return reply.status(201).send(result);
   });

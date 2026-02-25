@@ -28,7 +28,7 @@ export class LineService {
     this.repo = new LineRepository(db);
   }
 
-  create(buildingId: string, networkId: string, placeId: string): {
+  create(buildingId: string, networkId: string, placeId: string, localIds?: string[]): {
     id: string; packageCount: number;
   } | null {
     const building = this.storage.get(buildingId);
@@ -38,9 +38,18 @@ export class LineService {
     const place = building.getPlace(placeId);
     if (!network || !place) return null;
 
-    // Floors = índices dos filhos diretos do place
     const children = place.children;
-    const floors = children.map((_, i) => i);
+    let floors: number[];
+    if (localIds && localIds.length > 0) {
+      // Mapeia localIds → índices dos filhos
+      const idSet = new Set(localIds);
+      floors = children
+        .map((child, i) => idSet.has(child.id) ? i : -1)
+        .filter((i) => i >= 0);
+      if (floors.length === 0) return null;
+    } else {
+      floors = children.map((_, i) => i);
+    }
 
     const line = building.createLine(place, network, floors);
 
