@@ -41,6 +41,8 @@ interface PlaceRow {
   name: string;
   level: number;
   parentId: string | null;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 interface LineRow {
@@ -120,7 +122,8 @@ export class BuildingLoader {
 
     // 5. Load Places ordered by level so parents are created before children
     const places = this.db.prepare(`
-      SELECT id, name, level, parent_id AS parentId
+      SELECT id, name, level, parent_id AS parentId,
+             start_date AS startDate, end_date AS endDate
       FROM places WHERE building_id = ? ORDER BY level, rowid
     `).all(buildingId) as PlaceRow[];
 
@@ -143,6 +146,8 @@ export class BuildingLoader {
           building.addPlace(place);
         }
       }
+      if (pRow.startDate) place.startDate = new Date(pRow.startDate);
+      if (pRow.endDate) place.endDate = new Date(pRow.endDate);
     }
 
     // 6. Load Lines

@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS places (
   name        TEXT NOT NULL,
   level       INTEGER NOT NULL,
   row_num     INTEGER NOT NULL DEFAULT 0,
-  position    INTEGER NOT NULL DEFAULT 0
+  position    INTEGER NOT NULL DEFAULT 0,
+  start_date  TEXT,
+  end_date    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS lines (

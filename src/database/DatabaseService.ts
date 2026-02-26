@@ -20,6 +20,12 @@ export function openDatabase(dbPath: string): Database.Database {
   const schema = fs.readFileSync(schemaPath, 'utf-8');
   db.exec(schema);
 
+  // Migrations: add columns to existing DBs (idempotent)
+  const placesColumns = db.prepare("SELECT name FROM pragma_table_info('places')").all() as { name: string }[];
+  const placesCols = new Set(placesColumns.map(c => c.name));
+  if (!placesCols.has('start_date')) db.exec('ALTER TABLE places ADD COLUMN start_date TEXT');
+  if (!placesCols.has('end_date')) db.exec('ALTER TABLE places ADD COLUMN end_date TEXT');
+
   // Seed: garantir que o usuário master existe
   const masterEmail = 'master@master.com';
   let master = db
