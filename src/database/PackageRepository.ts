@@ -6,11 +6,11 @@ export class PackageRepository {
 
   bulkUpdate(packages: Package[]): void {
     const update = this.db.prepare(`
-      UPDATE packages SET start_col = @startCol, end_col = @endCol WHERE id = @id
+      UPDATE packages SET start_col = @startCol, end_col = @endCol, team_id = @teamId WHERE id = @id
     `);
     const updateAll = this.db.transaction(() => {
       for (const pkg of packages) {
-        update.run({ id: pkg.getId(), startCol: pkg.start(), endCol: pkg.end() });
+        update.run({ id: pkg.getId(), startCol: pkg.start(), endCol: pkg.end(), teamId: pkg.getTeamId() });
       }
     });
     updateAll();

@@ -10,6 +10,7 @@ import { typologyRoutes } from './routes/typologies';
 import { diagramRoutes } from './routes/diagrams';
 import { lineRoutes } from './routes/lines';
 import { movementRoutes } from './routes/movement';
+import { stackingRoutes } from './routes/stacking';
 import { calendarRoutes } from './routes/calendar';
 import { BuildingStorage } from './storage/BuildingStorage';
 import { BuildingCache } from './cache/BuildingCache';
@@ -153,6 +154,7 @@ export function buildApp(opts: BuildAppOptions = {}) {
   app.register(diagramRoutes);
   app.register(lineRoutes);
   app.register(movementRoutes);
+  app.register(stackingRoutes);
   app.register(calendarRoutes);
 
   return app;
