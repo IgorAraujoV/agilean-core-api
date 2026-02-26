@@ -6,6 +6,8 @@ interface PlaceResponse {
   id: string;
   name: string;
   level: number;
+  startDate: string | null;
+  endDate: string | null;
   children: PlaceResponse[];
 }
 
@@ -88,7 +90,47 @@ export class TypologyService {
       id: place.id,
       name: place.name,
       level: place.level,
+      startDate: place.startDate?.toISOString() ?? null,
+      endDate: place.endDate?.toISOString() ?? null,
       children: place.children.map(c => this.toResponse(c)),
     };
+  }
+
+  getPlaceResponse(place: Place): PlaceResponse {
+    return this.toResponse(place);
+  }
+
+  updatePlaceDates(
+    building: Building,
+    placeId: string,
+    startDate?: string | null,
+    endDate?: string | null,
+  ): { success: true; place: Place; movedPackages?: string[] } | { success: false; error: string } {
+    const place = building.getPlace(placeId);
+    if (!place) return { success: false, error: 'PLACE_NOT_FOUND' };
+
+    let movedPackages: string[] = [];
+
+    if (startDate !== undefined) {
+      const date = startDate !== null ? new Date(startDate) : null;
+      const result = building.setUnitStartDate(placeId, date);
+      if (!result.success) return { success: false, error: result.error! };
+      movedPackages = result.movedPackages ?? [];
+    }
+
+    if (endDate !== undefined) {
+      const date = endDate !== null ? new Date(endDate) : null;
+      const result = building.setUnitEndDate(placeId, date);
+      if (!result.success) return { success: false, error: result.error! };
+    }
+
+    // Persist to DB
+    this.repo.updatePlaceDates(
+      placeId,
+      place.startDate?.toISOString() ?? null,
+      place.endDate?.toISOString() ?? null,
+    );
+
+    return { success: true, place, movedPackages };
   }
 }
