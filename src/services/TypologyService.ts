@@ -1,19 +1,25 @@
 import { Building, Place } from 'agilean';
+import type { Package } from 'agilean';
 import type { Database } from 'better-sqlite3';
 import { StructuralRepository } from '../database/StructuralRepository';
+import { PackageRepository } from '../database/PackageRepository';
 
 interface PlaceResponse {
   id: string;
   name: string;
   level: number;
+  startDate: string | null;
+  endDate: string | null;
   children: PlaceResponse[];
 }
 
 export class TypologyService {
   private repo: StructuralRepository;
+  private pkgRepo: PackageRepository;
 
   constructor(db: Database) {
     this.repo = new StructuralRepository(db);
+    this.pkgRepo = new PackageRepository(db);
   }
 
   createUnit(building: Building, name: string): Place {
@@ -88,7 +94,59 @@ export class TypologyService {
       id: place.id,
       name: place.name,
       level: place.level,
+      startDate: place.startDate?.toISOString() ?? null,
+      endDate: place.endDate?.toISOString() ?? null,
       children: place.children.map(c => this.toResponse(c)),
     };
+  }
+
+  getPlaceResponse(place: Place): PlaceResponse {
+    return this.toResponse(place);
+  }
+
+  updatePlaceDates(
+    building: Building,
+    placeId: string,
+    startDate?: string | null,
+    endDate?: string | null,
+  ): { success: true; place: Place; movedPackages?: string[] } | { success: false; error: string } {
+    const place = building.getPlace(placeId);
+    if (!place) return { success: false, error: 'PLACE_NOT_FOUND' };
+
+    let movedPackages: string[] = [];
+
+    if (startDate !== undefined) {
+      const date = startDate !== null ? new Date(startDate) : null;
+      const result = building.setUnitStartDate(placeId, date);
+      if (!result.success) return { success: false, error: result.error! };
+      movedPackages = result.movedPackages ?? [];
+
+      // Persist moved package positions to SQLite
+      if (movedPackages.length > 0) {
+        const pkgObjects: Package[] = [];
+        for (const pkgId of movedPackages) {
+          const pkg = building.getPackage(pkgId);
+          if (pkg) pkgObjects.push(pkg);
+        }
+        if (pkgObjects.length > 0) {
+          this.pkgRepo.bulkUpdate(pkgObjects);
+        }
+      }
+    }
+
+    if (endDate !== undefined) {
+      const date = endDate !== null ? new Date(endDate) : null;
+      const result = building.setUnitEndDate(placeId, date);
+      if (!result.success) return { success: false, error: result.error! };
+    }
+
+    // Persist place dates to DB
+    this.repo.updatePlaceDates(
+      placeId,
+      place.startDate?.toISOString() ?? null,
+      place.endDate?.toISOString() ?? null,
+    );
+
+    return { success: true, place, movedPackages };
   }
 }

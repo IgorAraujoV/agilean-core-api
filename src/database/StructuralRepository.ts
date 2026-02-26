@@ -59,8 +59,8 @@ export class StructuralRepository {
 
   insertPlace(place: Place, buildingId: string, parentId: string | null): void {
     this.db.prepare(`
-      INSERT INTO places (id, building_id, parent_id, name, level, row_num, position)
-      VALUES (@id, @buildingId, @parentId, @name, @level, @rowNum, @position)
+      INSERT INTO places (id, building_id, parent_id, name, level, row_num, position, start_date, end_date)
+      VALUES (@id, @buildingId, @parentId, @name, @level, @rowNum, @position, @startDate, @endDate)
     `).run({
       id: place.id,
       buildingId,
@@ -69,6 +69,8 @@ export class StructuralRepository {
       level: place.level,
       rowNum: place.row(),
       position: 0,
+      startDate: place.startDate?.toISOString() ?? null,
+      endDate: place.endDate?.toISOString() ?? null,
     });
   }
 
@@ -130,6 +132,12 @@ export class StructuralRepository {
     this.db
       .prepare('UPDATE places SET name = @name WHERE id = @placeId')
       .run({ placeId, name });
+  }
+
+  updatePlaceDates(placeId: string, startDate: string | null, endDate: string | null): void {
+    this.db
+      .prepare('UPDATE places SET start_date = @startDate, end_date = @endDate WHERE id = @placeId')
+      .run({ placeId, startDate, endDate });
   }
 
   deletePackagesForPlaces(placeIds: string[]): void {

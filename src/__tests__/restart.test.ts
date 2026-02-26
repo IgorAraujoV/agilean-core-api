@@ -324,4 +324,46 @@ describe('Server restart: routes hydrate building from DB', () => {
       if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     }
   });
+
+  it('GET /typologies returns place dates after restart', async () => {
+    const dbPath = tmpDb();
+    try {
+      const app1 = buildApp({ dbPath });
+      const token = await getAuthToken(app1);
+
+      const bRes = await app1.inject({
+        method: 'POST', url: '/buildings', headers: authHeaders(token),
+        payload: { name: 'Restart Dates', firstDate: '2024-01-01' },
+      });
+      const buildingId = bRes.json().id;
+
+      const pRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token), payload: { name: 'Bloco A' },
+      });
+      const placeId = pRes.json().id;
+
+      await app1.inject({
+        method: 'PATCH', url: `/buildings/${buildingId}/typologies/${placeId}`,
+        headers: authHeaders(token),
+        payload: { startDate: '2024-02-01T08:00:00.000Z', endDate: '2024-06-01T08:00:00.000Z' },
+      });
+
+      // Restart: new app, same DB, empty storage
+      const app2 = buildApp({ dbPath });
+      const res = await app2.inject({
+        method: 'GET', url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const units = res.json() as Array<{ id: string; startDate: string | null; endDate: string | null }>;
+      const unit = units.find(u => u.id === placeId);
+      expect(unit).toBeDefined();
+      expect(unit!.startDate).toBeTruthy();
+      expect(unit!.endDate).toBeTruthy();
+    } finally {
+      if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    }
+  });
 });

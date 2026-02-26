@@ -24,6 +24,12 @@ export const RenamePlaceSchema = z.object({
 });
 export type RenamePlaceInput = z.infer<typeof RenamePlaceSchema>;
 
+export const UpdatePlaceDatesSchema = z.object({
+  startDate: z.string().datetime().nullable().optional(),
+  endDate: z.string().datetime().nullable().optional(),
+});
+export type UpdatePlaceDatesInput = z.infer<typeof UpdatePlaceDatesSchema>;
+
 // === Diagram ===
 export const CreateDiagramSchema = z.object({
   name: z.string().min(1),
