@@ -38,7 +38,8 @@ src/
 │   ├── DiagramPropagationService.ts  # Snapshot → diff → persist changeset
 │   ├── TypologyService.ts       # Place hierarchy
 │   ├── LineService.ts           # Line operations
-│   └── MovementEndpointService.ts   # Package movement
+│   ├── MovementEndpointService.ts   # Package movement
+│   └── StackingEndpointService.ts   # Stack/unstack — snapshot all line pkgs → diff → persist
 ├── routes/
 │   ├── auth.ts          # POST /auth/login  (pública — sem JWT)
 │   ├── health.ts        # GET /health       (pública)
@@ -46,7 +47,8 @@ src/
 │   ├── typologies.ts    # Place hierarchy endpoints
 │   ├── diagrams.ts      # Diagram & Network CRUD
 │   ├── lines.ts         # Line endpoints
-│   └── movement.ts      # Package movement/scheduling
+│   ├── movement.ts      # Package movement/scheduling
+│   └── stacking.ts      # Stack +1 / Unstack -1
 └── __tests__/
     ├── testHelpers.ts        # getAuthToken(app), authHeaders(token)
     ├── auth.test.ts
@@ -56,11 +58,17 @@ src/
     ├── typologies.test.ts
     ├── lines.test.ts
     ├── movement.test.ts
+    ├── stacking.test.ts
+    ├── restart.test.ts
     ├── BuildingStorage.test.ts
     ├── StructuralRepository.test.ts
     ├── UserRepository.test.ts
     ├── AuthService.test.ts
-    └── Benchmark50k.test.ts
+    ├── Benchmark50k.test.ts
+    └── usecases/             # Testes de regressão baseados em cenários reais
+        └── stacking-precedence-colado/
+            ├── README.md                              # Descrição do bug e cenário
+            └── stacking-precedence-colado.test.ts
 ```
 
 ## Dual-Write Pattern
@@ -130,6 +138,25 @@ Para adicionar novo contexto global, expandir `AppContext` em `app.ts`.
 - `health.test.ts` **não precisa** de token (rota pública)
 - `BuildingStorage.test.ts` e `StructuralRepository.test.ts` **não precisam** de token (não testam rotas HTTP)
 - Helpers no topo do describe para criar resources pré-existentes (ex: `createBuilding(app, token)`)
+- **Assertions usam valores hardcoded** — nunca calcular o esperado a partir de variáveis. Ex: `expect(row.start_col).toBe(1209)`, não `expect(row.start_col).toBe(X + D)`. Se não sabe o valor exato, rode o código antes para descobri-lo.
+
+## Testes de use-case (regressão)
+
+- Pasta: `__tests__/usecases/`
+- Cada use-case é uma **pasta** com nome descritivo:
+  ```
+  usecases/
+  └── stacking-precedence-colado/
+      ├── README.md               # Descrição do bug, cenário, causa raiz e fix
+      ├── stacking-precedence-colado.test.ts
+      └── dados-cliente.json      # (opcional) dados reais do projeto do cliente
+  ```
+- `README.md` — descrição breve ou detalhada conforme complexidade do bug
+- `dados-cliente.json` — (quando aplicável) arquivo com dados reais do cliente; o teste importa e usa para montar a base
+- O teste monta toda a base via API com dados exatos do cenário
+- Executa o movimento/operação que causou o erro
+- Assert com valores hardcoded garante que o fix resolve na raiz
+- Quando surgir um bug em projeto real, criar uma pasta aqui que reproduz exatamente o cenário
 
 ## Error handling
 

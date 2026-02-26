@@ -200,4 +200,128 @@ describe('Server restart: routes hydrate building from DB', () => {
 
     expect(res.statusCode).toBe(404);
   });
+
+  it('stack +1 survives restart with correct team indexes', async () => {
+    const dbPath = tmpDb();
+    try {
+      const app1 = buildApp({ dbPath });
+      const token = await getAuthToken(app1);
+
+      // Create project with 5 floors
+      const bRes = await app1.inject({
+        method: 'POST', url: '/buildings', headers: authHeaders(token),
+        payload: { name: 'Restart Stack', firstDate: '2024-01-01' },
+      });
+      const buildingId: string = bRes.json().id;
+
+      const dRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/diagrams`,
+        headers: authHeaders(token), payload: { name: 'D' },
+      });
+      const diagramId: string = dRes.json().id;
+
+      const nRes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/diagrams/${diagramId}/networks`,
+        headers: authHeaders(token), payload: { name: 'N' },
+      });
+      const networkId: string = nRes.json().id;
+
+      const sRes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/diagrams/${diagramId}/networks/${networkId}/stages`,
+        headers: authHeaders(token),
+        payload: { name: 'A', duration: 5, latency: 0 },
+      });
+      const stageId: string = sRes.json().id;
+
+      const uRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token), payload: { name: 'Bloco' },
+      });
+      const unitId: string = uRes.json().id;
+
+      for (let i = 0; i < 5; i++) {
+        await app1.inject({
+          method: 'POST', url: `/buildings/${buildingId}/typologies`,
+          headers: authHeaders(token), payload: { name: `P${i}`, parentId: unitId },
+        });
+      }
+
+      const lRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/lines`,
+        headers: authHeaders(token),
+        payload: { networkId, placeId: unitId },
+      });
+      const lineId: string = lRes.json().id;
+
+      // Get a package to stack
+      const pkgsRes = await app1.inject({
+        method: 'GET',
+        url: `/buildings/${buildingId}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      const packages = pkgsRes.json() as Array<{ id: string; stageId: string }>;
+      const firstPkg = packages.find(p => p.stageId === stageId)!;
+
+      // Stack +1
+      const stackRes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/packages/${firstPkg.id}/stack`,
+        headers: authHeaders(token),
+      });
+      expect(stackRes.statusCode).toBe(200);
+      const stackBody = stackRes.json();
+      const newTeamId = stackBody.createdTeams[0].id;
+
+      // Verify 2 teams before restart
+      const teamsBefore = app1.ctx.db
+        .prepare('SELECT id, position FROM teams WHERE line_id = ? ORDER BY position')
+        .all(lineId) as Array<{ id: string; position: number }>;
+      expect(teamsBefore.length).toBe(2);
+      expect(teamsBefore[0]!.position).toBe(0);
+      expect(teamsBefore[1]!.position).toBe(1);
+
+      // --- Restart: new app, same DB, empty storage ---
+      const app2 = buildApp({ dbPath });
+
+      // Verify packages hydrate correctly after restart
+      const pkgsAfter = await app2.inject({
+        method: 'GET',
+        url: `/buildings/${buildingId}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      expect(pkgsAfter.statusCode).toBe(200);
+      const pkgsAfterJson = pkgsAfter.json() as Array<{ id: string; startCol: number; endCol: number }>;
+      expect(pkgsAfterJson.length).toBe(5);
+
+      // Verify exact stacked positions survived restart (parallel pairs)
+      // Same setup as stacking.test.ts: 5 floors, duration 5, firstDate 2024-01-01
+      const sorted = [...pkgsAfterJson].sort((a, b) => a.startCol - b.startCol);
+      expect(sorted[0]!.startCol).toBe(1204);
+      expect(sorted[1]!.startCol).toBe(1204);  // parallel
+      expect(sorted[2]!.startCol).toBe(1209);
+      expect(sorted[3]!.startCol).toBe(1209);  // parallel
+      expect(sorted[4]!.startCol).toBe(1214);
+
+      // Verify team indexes are correct in DB after restart
+      const teamsAfter = app2.ctx.db
+        .prepare('SELECT id, position FROM teams WHERE line_id = ? ORDER BY position')
+        .all(lineId) as Array<{ id: string; position: number }>;
+      expect(teamsAfter.length).toBe(2);
+      expect(teamsAfter[0]!.position).toBe(0);
+      expect(teamsAfter[1]!.position).toBe(1);
+
+      // Verify package-team associations survived restart
+      const dbPkgsAfter = app2.ctx.db
+        .prepare('SELECT id, team_id FROM packages WHERE stage_id = ? ORDER BY start_col')
+        .all(stageId) as Array<{ id: string; team_id: string }>;
+      const teamIdsAfter = [...new Set(dbPkgsAfter.map(p => p.team_id))];
+      expect(teamIdsAfter.length).toBe(2);
+      const onNewTeamAfter = dbPkgsAfter.filter(p => p.team_id === newTeamId);
+      expect(onNewTeamAfter.length).toBe(2);
+    } finally {
+      if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    }
+  });
 });
