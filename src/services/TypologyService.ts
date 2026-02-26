@@ -1,6 +1,8 @@
 import { Building, Place } from 'agilean';
+import type { Package } from 'agilean';
 import type { Database } from 'better-sqlite3';
 import { StructuralRepository } from '../database/StructuralRepository';
+import { PackageRepository } from '../database/PackageRepository';
 
 interface PlaceResponse {
   id: string;
@@ -13,9 +15,11 @@ interface PlaceResponse {
 
 export class TypologyService {
   private repo: StructuralRepository;
+  private pkgRepo: PackageRepository;
 
   constructor(db: Database) {
     this.repo = new StructuralRepository(db);
+    this.pkgRepo = new PackageRepository(db);
   }
 
   createUnit(building: Building, name: string): Place {
@@ -116,6 +120,18 @@ export class TypologyService {
       const result = building.setUnitStartDate(placeId, date);
       if (!result.success) return { success: false, error: result.error! };
       movedPackages = result.movedPackages ?? [];
+
+      // Persist moved package positions to SQLite
+      if (movedPackages.length > 0) {
+        const pkgObjects: Package[] = [];
+        for (const pkgId of movedPackages) {
+          const pkg = building.getPackage(pkgId);
+          if (pkg) pkgObjects.push(pkg);
+        }
+        if (pkgObjects.length > 0) {
+          this.pkgRepo.bulkUpdate(pkgObjects);
+        }
+      }
     }
 
     if (endDate !== undefined) {
@@ -124,7 +140,7 @@ export class TypologyService {
       if (!result.success) return { success: false, error: result.error! };
     }
 
-    // Persist to DB
+    // Persist place dates to DB
     this.repo.updatePlaceDates(
       placeId,
       place.startDate?.toISOString() ?? null,
