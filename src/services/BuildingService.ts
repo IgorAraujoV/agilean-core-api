@@ -20,7 +20,7 @@ export class BuildingService {
     const building = new Building({
       name: input.name,
       firstDate: input.firstDate,
-      today: new Date(),
+      today: input.firstDate,
     });
     this.storage.save(building, userId);
     this.repo.insertBuilding(building);

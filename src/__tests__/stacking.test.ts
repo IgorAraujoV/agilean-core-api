@@ -62,13 +62,13 @@ function queryPkgs(app: ReturnType<typeof buildApp>, stageId: string): DbPkg[] {
 }
 
 // Setup: 5 floors, 1 stage (duration=5, latency=0), firstDate='2024-01-01'
-// Produces 5 packages starting at column 1204, duration 5 columns each.
+// Produces 5 packages starting at column 84, duration 5 columns each.
 //
-// Before stack: [1204,1208] [1209,1213] [1214,1218] [1219,1223] [1224,1228]
+// Before stack: [84,88] [89,93] [94,98] [99,103] [104,108]
 // After stack +1 (2 teams, round-robin):
-//   pair1: [1204,1208] [1204,1208]
-//   pair2: [1209,1213] [1209,1213]
-//   solo:  [1214,1218]
+//   pair1: [84,88] [84,88]
+//   pair2: [89,93] [89,93]
+//   solo:  [94,98]
 
 describe('Stacking endpoints', () => {
 
@@ -85,16 +85,16 @@ describe('Stacking endpoints', () => {
     for (const p of before) expect(p.team_id).toBe(initialTeamId);
 
     // Verify initial sequential layout
-    expect(before[0]!.start_col).toBe(1204);
-    expect(before[0]!.end_col).toBe(1208);
-    expect(before[1]!.start_col).toBe(1209);
-    expect(before[1]!.end_col).toBe(1213);
-    expect(before[2]!.start_col).toBe(1214);
-    expect(before[2]!.end_col).toBe(1218);
-    expect(before[3]!.start_col).toBe(1219);
-    expect(before[3]!.end_col).toBe(1223);
-    expect(before[4]!.start_col).toBe(1224);
-    expect(before[4]!.end_col).toBe(1228);
+    expect(before[0]!.start_col).toBe(84);
+    expect(before[0]!.end_col).toBe(88);
+    expect(before[1]!.start_col).toBe(89);
+    expect(before[1]!.end_col).toBe(93);
+    expect(before[2]!.start_col).toBe(94);
+    expect(before[2]!.end_col).toBe(98);
+    expect(before[3]!.start_col).toBe(99);
+    expect(before[3]!.end_col).toBe(103);
+    expect(before[4]!.start_col).toBe(104);
+    expect(before[4]!.end_col).toBe(108);
 
     // --- Stack +1 ---
     const res = await app.inject({
@@ -116,21 +116,21 @@ describe('Stacking endpoints', () => {
     const after = queryPkgs(app, stageId);
     expect(after.length).toBe(5);
 
-    // Parallel pair 1: 2 packages at column 1204
-    expect(after[0]!.start_col).toBe(1204);
-    expect(after[0]!.end_col).toBe(1208);
-    expect(after[1]!.start_col).toBe(1204);
-    expect(after[1]!.end_col).toBe(1208);
+    // Parallel pair 1: 2 packages at column 84
+    expect(after[0]!.start_col).toBe(84);
+    expect(after[0]!.end_col).toBe(88);
+    expect(after[1]!.start_col).toBe(84);
+    expect(after[1]!.end_col).toBe(88);
 
-    // Parallel pair 2: 2 packages at column 1209
-    expect(after[2]!.start_col).toBe(1209);
-    expect(after[2]!.end_col).toBe(1213);
-    expect(after[3]!.start_col).toBe(1209);
-    expect(after[3]!.end_col).toBe(1213);
+    // Parallel pair 2: 2 packages at column 89
+    expect(after[2]!.start_col).toBe(89);
+    expect(after[2]!.end_col).toBe(93);
+    expect(after[3]!.start_col).toBe(89);
+    expect(after[3]!.end_col).toBe(93);
 
-    // Solo package at column 1214
-    expect(after[4]!.start_col).toBe(1214);
-    expect(after[4]!.end_col).toBe(1218);
+    // Solo package at column 94
+    expect(after[4]!.start_col).toBe(94);
+    expect(after[4]!.end_col).toBe(98);
 
     // Each parallel pair on different teams
     expect(after[0]!.team_id).not.toBe(after[1]!.team_id);
@@ -224,16 +224,16 @@ describe('Stacking endpoints', () => {
     // --- Verify exact positions restored to original sequential layout ---
     const after = queryPkgs(app, stageId);
     expect(after.length).toBe(5);
-    expect(after[0]!.start_col).toBe(1204);
-    expect(after[0]!.end_col).toBe(1208);
-    expect(after[1]!.start_col).toBe(1209);
-    expect(after[1]!.end_col).toBe(1213);
-    expect(after[2]!.start_col).toBe(1214);
-    expect(after[2]!.end_col).toBe(1218);
-    expect(after[3]!.start_col).toBe(1219);
-    expect(after[3]!.end_col).toBe(1223);
-    expect(after[4]!.start_col).toBe(1224);
-    expect(after[4]!.end_col).toBe(1228);
+    expect(after[0]!.start_col).toBe(84);
+    expect(after[0]!.end_col).toBe(88);
+    expect(after[1]!.start_col).toBe(89);
+    expect(after[1]!.end_col).toBe(93);
+    expect(after[2]!.start_col).toBe(94);
+    expect(after[2]!.end_col).toBe(98);
+    expect(after[3]!.start_col).toBe(99);
+    expect(after[3]!.end_col).toBe(103);
+    expect(after[4]!.start_col).toBe(104);
+    expect(after[4]!.end_col).toBe(108);
 
     // All back on same team
     const teamIds = [...new Set(after.map(p => p.team_id))];

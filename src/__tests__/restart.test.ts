@@ -298,11 +298,11 @@ describe('Server restart: routes hydrate building from DB', () => {
       // Verify exact stacked positions survived restart (parallel pairs)
       // Same setup as stacking.test.ts: 5 floors, duration 5, firstDate 2024-01-01
       const sorted = [...pkgsAfterJson].sort((a, b) => a.startCol - b.startCol);
-      expect(sorted[0]!.startCol).toBe(1204);
-      expect(sorted[1]!.startCol).toBe(1204);  // parallel
-      expect(sorted[2]!.startCol).toBe(1209);
-      expect(sorted[3]!.startCol).toBe(1209);  // parallel
-      expect(sorted[4]!.startCol).toBe(1214);
+      expect(sorted[0]!.startCol).toBe(84);
+      expect(sorted[1]!.startCol).toBe(84);  // parallel
+      expect(sorted[2]!.startCol).toBe(89);
+      expect(sorted[3]!.startCol).toBe(89);  // parallel
+      expect(sorted[4]!.startCol).toBe(94);
 
       // Verify team indexes are correct in DB after restart
       const teamsAfter = app2.ctx.db
