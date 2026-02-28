@@ -11,14 +11,14 @@ import { getAuthToken, authHeaders } from '../../testHelpers';
  *
  * Setup: firstDate='2024-01-01', 3 floors, 2 stages (A dur=5 lat=0, B dur=5 lat=0), A→B
  *
- * Initial:     A: [1204,1208] [1209,1213] [1214,1218]
- *              B: [1209,1213] [1214,1218] [1219,1223]
+ * Initial:     A: [84,88] [89,93] [94,98]
+ *              B: [89,93] [94,98] [99,103]
  *
- * After +1 A:  A: [1204,1208] [1204,1208] [1209,1213]
- * After +1 B:  B: [1209,1213] [1209,1213] [1214,1218]
+ * After +1 A:  A: [84,88] [84,88] [89,93]
+ * After +1 B:  B: [89,93] [89,93] [94,98]
  *
- * After -1 A:  A: [1204,1208] [1209,1213] [1214,1218]
- *              B: [1209,1213] [1214,1218] [1219,1223]
+ * After -1 A:  A: [84,88] [89,93] [94,98]
+ *              B: [89,93] [94,98] [99,103]
  */
 
 type Pkg = { id: string; stageId: string; startCol: number; endCol: number; teamId: string };
@@ -106,12 +106,12 @@ describe('Use-case: unstack with stacked+touching precedence', () => {
     const { buildingId, stageAId, stageBId, aPkgs, bPkgs } = await setupProject(app, token);
 
     // Verify initial layout: A sequential, B sequential (touching)
-    expect(aPkgs[0]!.startCol).toBe(1204);
-    expect(aPkgs[1]!.startCol).toBe(1209);
-    expect(aPkgs[2]!.startCol).toBe(1214);
-    expect(bPkgs[0]!.startCol).toBe(1209);
-    expect(bPkgs[1]!.startCol).toBe(1214);
-    expect(bPkgs[2]!.startCol).toBe(1219);
+    expect(aPkgs[0]!.startCol).toBe(84);
+    expect(aPkgs[1]!.startCol).toBe(89);
+    expect(aPkgs[2]!.startCol).toBe(94);
+    expect(bPkgs[0]!.startCol).toBe(89);
+    expect(bPkgs[1]!.startCol).toBe(94);
+    expect(bPkgs[2]!.startCol).toBe(99);
 
     // Stack A (+1): compresses 3 packages into 2 time slots
     await app.inject({
@@ -131,16 +131,16 @@ describe('Use-case: unstack with stacked+touching precedence', () => {
     const dbAStacked = app.ctx.db
       .prepare('SELECT start_col, end_col FROM packages WHERE stage_id = ? ORDER BY start_col')
       .all(stageAId) as Array<{ start_col: number; end_col: number }>;
-    expect(dbAStacked[0]!.start_col).toBe(1204);
-    expect(dbAStacked[1]!.start_col).toBe(1204);
-    expect(dbAStacked[2]!.start_col).toBe(1209);
+    expect(dbAStacked[0]!.start_col).toBe(84);
+    expect(dbAStacked[1]!.start_col).toBe(84);
+    expect(dbAStacked[2]!.start_col).toBe(89);
 
     const dbBStacked = app.ctx.db
       .prepare('SELECT start_col, end_col FROM packages WHERE stage_id = ? ORDER BY start_col')
       .all(stageBId) as Array<{ start_col: number; end_col: number }>;
-    expect(dbBStacked[0]!.start_col).toBe(1209);
-    expect(dbBStacked[1]!.start_col).toBe(1209);
-    expect(dbBStacked[2]!.start_col).toBe(1214);
+    expect(dbBStacked[0]!.start_col).toBe(89);
+    expect(dbBStacked[1]!.start_col).toBe(89);
+    expect(dbBStacked[2]!.start_col).toBe(94);
 
     // --- THE BUG: unstack A should push B and include B in response ---
     const unstackRes = await app.inject({
@@ -162,23 +162,23 @@ describe('Use-case: unstack with stacked+touching precedence', () => {
     const dbAAfter = app.ctx.db
       .prepare('SELECT start_col, end_col FROM packages WHERE stage_id = ? ORDER BY start_col')
       .all(stageAId) as Array<{ start_col: number; end_col: number }>;
-    expect(dbAAfter[0]!.start_col).toBe(1204);
-    expect(dbAAfter[0]!.end_col).toBe(1208);
-    expect(dbAAfter[1]!.start_col).toBe(1209);
-    expect(dbAAfter[1]!.end_col).toBe(1213);
-    expect(dbAAfter[2]!.start_col).toBe(1214);
-    expect(dbAAfter[2]!.end_col).toBe(1218);
+    expect(dbAAfter[0]!.start_col).toBe(84);
+    expect(dbAAfter[0]!.end_col).toBe(88);
+    expect(dbAAfter[1]!.start_col).toBe(89);
+    expect(dbAAfter[1]!.end_col).toBe(93);
+    expect(dbAAfter[2]!.start_col).toBe(94);
+    expect(dbAAfter[2]!.end_col).toBe(98);
 
     // DB state must match memory for stage B (pushed right by A expanding)
     const dbBAfter = app.ctx.db
       .prepare('SELECT start_col, end_col FROM packages WHERE stage_id = ? ORDER BY start_col')
       .all(stageBId) as Array<{ start_col: number; end_col: number }>;
-    expect(dbBAfter[0]!.start_col).toBe(1209);
-    expect(dbBAfter[0]!.end_col).toBe(1213);
-    expect(dbBAfter[1]!.start_col).toBe(1214);
-    expect(dbBAfter[1]!.end_col).toBe(1218);
-    expect(dbBAfter[2]!.start_col).toBe(1219);
-    expect(dbBAfter[2]!.end_col).toBe(1223);
+    expect(dbBAfter[0]!.start_col).toBe(89);
+    expect(dbBAfter[0]!.end_col).toBe(93);
+    expect(dbBAfter[1]!.start_col).toBe(94);
+    expect(dbBAfter[1]!.end_col).toBe(98);
+    expect(dbBAfter[2]!.start_col).toBe(99);
+    expect(dbBAfter[2]!.end_col).toBe(103);
 
     // Memory must equal DB (the core of the bug)
     const memA: number[] = [];
@@ -211,17 +211,17 @@ describe('Use-case: unstack with stacked+touching precedence', () => {
     const dbAAfter = app.ctx.db
       .prepare('SELECT start_col FROM packages WHERE stage_id = ? ORDER BY start_col')
       .all(stageAId) as Array<{ start_col: number }>;
-    expect(dbAAfter[0]!.start_col).toBe(1204);
-    expect(dbAAfter[1]!.start_col).toBe(1204);
-    expect(dbAAfter[2]!.start_col).toBe(1209);
+    expect(dbAAfter[0]!.start_col).toBe(84);
+    expect(dbAAfter[1]!.start_col).toBe(84);
+    expect(dbAAfter[2]!.start_col).toBe(89);
 
     // Verify DB state for B — should NOT have changed (A compressed = B same or earlier)
     const dbBAfter = app.ctx.db
       .prepare('SELECT start_col FROM packages WHERE stage_id = ? ORDER BY start_col')
       .all(stageBId) as Array<{ start_col: number }>;
-    expect(dbBAfter[0]!.start_col).toBe(1209);
-    expect(dbBAfter[1]!.start_col).toBe(1214);
-    expect(dbBAfter[2]!.start_col).toBe(1219);
+    expect(dbBAfter[0]!.start_col).toBe(89);
+    expect(dbBAfter[1]!.start_col).toBe(94);
+    expect(dbBAfter[2]!.start_col).toBe(99);
 
     // Memory must equal DB
     const memB: number[] = [];
