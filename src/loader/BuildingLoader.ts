@@ -224,7 +224,7 @@ export class BuildingLoader {
     `).all(buildingId) as { id: string; sourceId: string; destId: string; latency: number; locked: number }[];
 
     for (const lkRow of linkRows) {
-      const result = building.addLink(lkRow.sourceId, lkRow.destId, lkRow.latency);
+      const result = building.addLink(lkRow.sourceId, lkRow.destId, lkRow.latency, lkRow.id);
       if (result instanceof Link) {
         if (!lkRow.locked) {
           result.setLocked(false);

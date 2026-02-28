@@ -435,8 +435,8 @@ describe('Server restart: routes hydrate building from DB', () => {
         latency: number; locked: boolean;
       }>;
       expect(links.length).toBe(1);
-      // Link ID may differ after hydration (addLink generates a new UUID);
-      // verify the link data matches instead
+      // Link ID is preserved after hydration (addLink accepts optional id)
+      expect(links[0]!.id).toBe(linkId);
       expect(links[0]!.sourceId).toBe(stageAPkgs[0]!.id);
       expect(links[0]!.destinationId).toBe(stageBPkgs[0]!.id);
       expect(links[0]!.latency).toBe(3);
