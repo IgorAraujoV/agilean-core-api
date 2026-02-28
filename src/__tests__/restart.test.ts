@@ -325,6 +325,134 @@ describe('Server restart: routes hydrate building from DB', () => {
     }
   });
 
+  it('links persist after server restart', async () => {
+    const dbPath = tmpDb();
+    try {
+      const app1 = buildApp({ dbPath });
+      const token = await getAuthToken(app1);
+
+      // 1. Create building with 2 stages + precedence, 2 floors, 1 line
+      const bRes = await app1.inject({
+        method: 'POST', url: '/buildings', headers: authHeaders(token),
+        payload: { name: 'Restart Links', firstDate: '2024-01-01' },
+      });
+      const buildingId: string = bRes.json().id;
+
+      const dRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/diagrams`,
+        headers: authHeaders(token), payload: { name: 'Diagrama' },
+      });
+      const diagramId: string = dRes.json().id;
+
+      const nRes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/diagrams/${diagramId}/networks`,
+        headers: authHeaders(token), payload: { name: 'Rede' },
+      });
+      const networkId: string = nRes.json().id;
+
+      const sARes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/diagrams/${diagramId}/networks/${networkId}/stages`,
+        headers: authHeaders(token),
+        payload: { name: 'A', duration: 5, latency: 0 },
+      });
+      const stageAId: string = sARes.json().id;
+
+      const sBRes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/diagrams/${diagramId}/networks/${networkId}/stages`,
+        headers: authHeaders(token),
+        payload: { name: 'B', duration: 5, latency: 0 },
+      });
+      const stageBId: string = sBRes.json().id;
+
+      await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/diagrams/${diagramId}/precedences`,
+        headers: authHeaders(token),
+        payload: { sourceStageId: stageAId, destinationStageId: stageBId, opening: 1, latency: 0 },
+      });
+
+      const uRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token), payload: { name: 'Bloco' },
+      });
+      const unitId: string = uRes.json().id;
+
+      await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token), payload: { name: 'P1', parentId: unitId },
+      });
+      await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token), payload: { name: 'P2', parentId: unitId },
+      });
+
+      const lRes = await app1.inject({
+        method: 'POST', url: `/buildings/${buildingId}/lines`,
+        headers: authHeaders(token),
+        payload: { networkId, placeId: unitId },
+      });
+      const lineId: string = lRes.json().id;
+
+      // 2. Get packages, create a link with latency=3
+      const pkgsRes = await app1.inject({
+        method: 'GET',
+        url: `/buildings/${buildingId}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      const allPkgs = pkgsRes.json() as Array<{ id: string; stageId: string }>;
+      const stageAPkgs = allPkgs.filter(p => p.stageId === stageAId);
+      const stageBPkgs = allPkgs.filter(p => p.stageId === stageBId);
+
+      const linkRes = await app1.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/links`,
+        headers: authHeaders(token),
+        payload: {
+          sourceId: stageAPkgs[0]!.id,
+          destinationId: stageBPkgs[0]!.id,
+          latency: 3,
+        },
+      });
+      expect(linkRes.statusCode).toBe(201);
+      const linkId: string = linkRes.json().id;
+
+      // 3. Restart: create new app with same dbPath
+      const app2 = buildApp({ dbPath });
+      const token2 = await getAuthToken(app2);
+
+      // 4. GET /links and verify the link survived
+      const linksRes = await app2.inject({
+        method: 'GET',
+        url: `/buildings/${buildingId}/links`,
+        headers: authHeaders(token2),
+      });
+      expect(linksRes.statusCode).toBe(200);
+      const links = linksRes.json() as Array<{
+        id: string; sourceId: string; destinationId: string;
+        latency: number; locked: boolean;
+      }>;
+      expect(links.length).toBe(1);
+      // Link ID may differ after hydration (addLink generates a new UUID);
+      // verify the link data matches instead
+      expect(links[0]!.sourceId).toBe(stageAPkgs[0]!.id);
+      expect(links[0]!.destinationId).toBe(stageBPkgs[0]!.id);
+      expect(links[0]!.latency).toBe(3);
+      expect(links[0]!.locked).toBe(true);
+      // Verify the original link is still in DB with original ID
+      const dbRow = app2.ctx.db
+        .prepare('SELECT id, latency, locked FROM links WHERE id = ?')
+        .get(linkId) as { id: string; latency: number; locked: number } | undefined;
+      expect(dbRow).toBeDefined();
+      expect(dbRow!.latency).toBe(3);
+      expect(dbRow!.locked).toBe(1);
+    } finally {
+      if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    }
+  });
+
   it('GET /typologies returns place dates after restart', async () => {
     const dbPath = tmpDb();
     try {
