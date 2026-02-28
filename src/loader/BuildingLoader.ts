@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import { Building, Diagram, Network, Stage, Place, Line, Team, Package } from 'agilean';
+import { Building, Diagram, Network, Stage, Place, Line, Team, Package, Link } from 'agilean';
 
 interface BuildingRow {
   id: string;
@@ -208,6 +208,28 @@ export class BuildingLoader {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pkg as any)._end = pRow.endCol;
       team.addPackage(pkg);
+    }
+
+    // Load Links (after all packages are in memory)
+    const linkRows = this.db.prepare(`
+      SELECT lk.id, lk.source_id AS sourceId, lk.dest_id AS destId,
+             lk.latency, lk.locked
+      FROM links lk
+      WHERE lk.source_id IN (
+        SELECT pk.id FROM packages pk
+        JOIN teams t ON t.id = pk.team_id
+        JOIN lines l ON l.id = t.line_id
+        WHERE l.building_id = ?
+      )
+    `).all(buildingId) as { id: string; sourceId: string; destId: string; latency: number; locked: number }[];
+
+    for (const lkRow of linkRows) {
+      const result = building.addLink(lkRow.sourceId, lkRow.destId, lkRow.latency);
+      if (result instanceof Link) {
+        if (!lkRow.locked) {
+          result.setLocked(false);
+        }
+      }
     }
 
     return building;
