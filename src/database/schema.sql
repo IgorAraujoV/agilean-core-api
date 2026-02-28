@@ -112,7 +112,8 @@ CREATE TABLE IF NOT EXISTS links (
   id        TEXT PRIMARY KEY,
   source_id TEXT NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
   dest_id   TEXT NOT NULL REFERENCES packages(id),
-  latency   INTEGER NOT NULL DEFAULT 0
+  latency   INTEGER NOT NULL DEFAULT 0,
+  locked    INTEGER NOT NULL DEFAULT 1
 );
 
 -- Relação many-to-many: building pode ter múltiplos users (futuro)

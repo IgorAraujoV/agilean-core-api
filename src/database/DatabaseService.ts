@@ -26,6 +26,10 @@ export function openDatabase(dbPath: string): Database.Database {
   if (!placesCols.has('start_date')) db.exec('ALTER TABLE places ADD COLUMN start_date TEXT');
   if (!placesCols.has('end_date')) db.exec('ALTER TABLE places ADD COLUMN end_date TEXT');
 
+  const linksColumns = db.prepare("SELECT name FROM pragma_table_info('links')").all() as { name: string }[];
+  const linksCols = new Set(linksColumns.map(c => c.name));
+  if (!linksCols.has('locked')) db.exec('ALTER TABLE links ADD COLUMN locked INTEGER NOT NULL DEFAULT 1');
+
   // Seed: garantir que o usuário master existe
   const masterEmail = 'master@master.com';
   let master = db
