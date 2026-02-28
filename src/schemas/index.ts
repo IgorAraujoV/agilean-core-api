@@ -56,3 +56,17 @@ export const AddPrecedenceSchema = z.object({
   latency: z.number().default(0),
 });
 export type AddPrecedenceInput = z.infer<typeof AddPrecedenceSchema>;
+
+// === Links ===
+export const CreateLinkSchema = z.object({
+  sourceId: z.string(),
+  destinationId: z.string(),
+  latency: z.number().default(0),
+});
+export type CreateLinkInput = z.infer<typeof CreateLinkSchema>;
+
+export const PatchLinkSchema = z.object({
+  latency: z.number().optional(),
+  locked: z.boolean().optional(),
+});
+export type PatchLinkInput = z.infer<typeof PatchLinkSchema>;
