@@ -1,8 +1,9 @@
 import { Link } from 'agilean';
-import type { Building, BuildingError } from 'agilean';
+import type { Building, BuildingError, Package } from 'agilean';
 import type { BuildingStorage } from '../storage/BuildingStorage';
 import { LinkRepository } from '../database/LinkRepository';
 import type { Database } from 'better-sqlite3';
+import type { MovePatch } from './MovementEndpointService';
 
 export interface LinkResponse {
   id: string;
@@ -11,6 +12,17 @@ export interface LinkResponse {
   latency: number;
   locked: boolean;
   currentGap: number;
+}
+
+export interface LinkCreateResponse {
+  link: LinkResponse;
+  movedCount: number;
+  packages: MovePatch[];
+}
+
+export interface LinkUpdateResponse extends LinkResponse {
+  movedCount: number;
+  packages: MovePatch[];
 }
 
 export class LinkEndpointService {
@@ -25,14 +37,20 @@ export class LinkEndpointService {
     sourceId: string,
     destinationId: string,
     latency: number,
-  ): { link: LinkResponse } | { error: BuildingError } {
+  ): LinkCreateResponse | { error: BuildingError } {
+    // Snapshot positions before link creation to detect moved packages
+    const before = this._snapshotPositions(building);
     const result = building.addLink(sourceId, destinationId, latency);
     if (result instanceof Link) {
       // Persist link
       this.linkRepo.insert(result.getId(), sourceId, destinationId, latency, result.isLocked());
       // Persist any packages that moved due to the link constraint
-      this._persistMovedPackages(building);
-      return { link: this._toResponse(result) };
+      const movedPatches = this._diffAndPersist(building, before);
+      return {
+        link: this._toResponse(result),
+        movedCount: movedPatches.length,
+        packages: movedPatches,
+      };
     }
     return { error: result.error! };
   }
@@ -45,9 +63,11 @@ export class LinkEndpointService {
     building: Building,
     linkId: string,
     fields: { latency?: number; locked?: boolean },
-  ): LinkResponse | null {
+  ): LinkUpdateResponse | null {
     const link = building.getLink(linkId);
     if (!link) return null;
+
+    const before = this._snapshotPositions(building);
 
     if (fields.latency !== undefined) {
       link.setLatency(fields.latency);
@@ -65,12 +85,16 @@ export class LinkEndpointService {
         const team = building.getTeam(source.getTeamId());
         if (team) {
           building.bfsRepositionTeams([team]);
-          this._persistMovedPackages(building);
         }
       }
     }
 
-    return this._toResponse(link);
+    const movedPatches = this._diffAndPersist(building, before);
+    return {
+      ...this._toResponse(link),
+      movedCount: movedPatches.length,
+      packages: movedPatches,
+    };
   }
 
   delete(building: Building, linkId: string): boolean {
@@ -81,9 +105,11 @@ export class LinkEndpointService {
     return success;
   }
 
-  toggleLock(building: Building, linkId: string): LinkResponse | null {
+  toggleLock(building: Building, linkId: string): LinkUpdateResponse | null {
     const link = building.getLink(linkId);
     if (!link) return null;
+
+    const before = this._snapshotPositions(building);
 
     link.toggleLock();
     this.linkRepo.update(linkId, {
@@ -98,12 +124,16 @@ export class LinkEndpointService {
         const team = building.getTeam(source.getTeamId());
         if (team) {
           building.bfsRepositionTeams([team]);
-          this._persistMovedPackages(building);
         }
       }
     }
 
-    return this._toResponse(link);
+    const movedPatches = this._diffAndPersist(building, before);
+    return {
+      ...this._toResponse(link),
+      movedCount: movedPatches.length,
+      packages: movedPatches,
+    };
   }
 
   private _toResponse(link: Link): LinkResponse {
@@ -117,20 +147,43 @@ export class LinkEndpointService {
     };
   }
 
-  private _persistMovedPackages(building: Building): void {
-    // Bulk update all package positions to DB
-    const allPkgs = building.packageStore.all();
+  private _snapshotPositions(building: Building): Map<string, { start: number; end: number }> {
+    const snapshot = new Map<string, { start: number; end: number }>();
+    for (const pkgData of building.packageStore.all()) {
+      const pkg = building.getPackage(pkgData.id);
+      if (pkg) {
+        snapshot.set(pkg.getId(), { start: pkg.start(), end: pkg.end() });
+      }
+    }
+    return snapshot;
+  }
+
+  private _diffAndPersist(
+    building: Building,
+    before: Map<string, { start: number; end: number }>,
+  ): MovePatch[] {
+    const moved: MovePatch[] = [];
     const updateStmt = this.db.prepare(
       'UPDATE packages SET start_col = @startCol, end_col = @endCol WHERE id = @id',
     );
     const tx = this.db.transaction(() => {
-      for (const pkgData of allPkgs) {
+      for (const pkgData of building.packageStore.all()) {
         const pkg = building.getPackage(pkgData.id);
-        if (pkg) {
+        if (!pkg) continue;
+        const prev = before.get(pkg.getId());
+        if (!prev || prev.start !== pkg.start() || prev.end !== pkg.end()) {
           updateStmt.run({ id: pkg.getId(), startCol: pkg.start(), endCol: pkg.end() });
+          moved.push({
+            id: pkg.getId(),
+            startCol: pkg.start(),
+            endCol: pkg.end(),
+            startDate: building.date(pkg.start()).toISOString(),
+            endDate: building.date(pkg.end()).toISOString(),
+          });
         }
       }
     });
     tx();
+    return moved;
   }
 }

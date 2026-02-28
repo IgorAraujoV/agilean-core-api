@@ -35,7 +35,7 @@ export async function linkRoutes(app: FastifyInstance): Promise<void> {
     if ('error' in result) {
       return reply.status(400).send({ error: result.error });
     }
-    return reply.status(201).send(result.link);
+    return reply.status(201).send(result);
   });
 
   // PATCH /buildings/:buildingId/links/:linkId

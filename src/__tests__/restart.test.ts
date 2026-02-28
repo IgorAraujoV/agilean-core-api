@@ -417,7 +417,7 @@ describe('Server restart: routes hydrate building from DB', () => {
         },
       });
       expect(linkRes.statusCode).toBe(201);
-      const linkId: string = linkRes.json().id;
+      const linkId: string = linkRes.json().link.id;
 
       // 3. Restart: create new app with same dbPath
       const app2 = buildApp({ dbPath });

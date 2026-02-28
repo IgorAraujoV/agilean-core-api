@@ -155,10 +155,13 @@ describe('Links CRUD endpoints', () => {
 
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.id).toBeDefined();
-    expect(body.sourceId).toBe(sourceId);
-    expect(body.destinationId).toBe(destinationId);
-    expect(body.locked).toBe(true);
+    expect(body.link).toBeDefined();
+    expect(body.link.id).toBeDefined();
+    expect(body.link.sourceId).toBe(sourceId);
+    expect(body.link.destinationId).toBe(destinationId);
+    expect(body.link.locked).toBe(true);
+    expect(body.movedCount).toBeDefined();
+    expect(body.packages).toBeDefined();
   });
 
   it('POST /links rejects link between packages of the same team', async () => {
@@ -228,7 +231,7 @@ describe('Links CRUD endpoints', () => {
     const createRes = await app.inject({ method: 'POST',
       url: `/buildings/${buildingId}/links`, headers: H,
       payload: { sourceId: stageAPkgs[0]!.id, destinationId: stageBPkgs[0]!.id, latency: 0 } });
-    const linkId: string = createRes.json().id;
+    const linkId: string = createRes.json().link.id;
 
     const patchRes = await app.inject({ method: 'PATCH',
       url: `/buildings/${buildingId}/links/${linkId}`, headers: H,
@@ -247,7 +250,7 @@ describe('Links CRUD endpoints', () => {
     const createRes = await app.inject({ method: 'POST',
       url: `/buildings/${buildingId}/links`, headers: H,
       payload: { sourceId: stageAPkgs[0]!.id, destinationId: stageBPkgs[0]!.id, latency: 0 } });
-    const linkId: string = createRes.json().id;
+    const linkId: string = createRes.json().link.id;
 
     const delRes = await app.inject({ method: 'DELETE',
       url: `/buildings/${buildingId}/links/${linkId}`, headers: H });
@@ -268,8 +271,8 @@ describe('Links CRUD endpoints', () => {
     const createRes = await app.inject({ method: 'POST',
       url: `/buildings/${buildingId}/links`, headers: H,
       payload: { sourceId: stageAPkgs[0]!.id, destinationId: stageBPkgs[0]!.id, latency: 0 } });
-    const linkId: string = createRes.json().id;
-    expect(createRes.json().locked).toBe(true);
+    const linkId: string = createRes.json().link.id;
+    expect(createRes.json().link.locked).toBe(true);
 
     // Toggle OFF
     const toggle1 = await app.inject({ method: 'POST',
@@ -374,7 +377,7 @@ describe('Link movement cascading via API', () => {
     const linkRes = await app.inject({ method: 'POST',
       url: `/buildings/${buildingId}/links`, headers: H,
       payload: { sourceId: srcPkg.id, destinationId: dstPkg.id, latency: 0 } });
-    const linkId: string = linkRes.json().id;
+    const linkId: string = linkRes.json().link.id;
 
     // Toggle lock OFF
     await app.inject({ method: 'POST',
@@ -397,9 +400,8 @@ describe('Link movement cascading via API', () => {
     const allPkgs = pkgsRes.json() as Array<{ id: string; startCol: number; endCol: number }>;
     const freshDst = allPkgs.find(p => p.id === dstPkg.id)!;
 
-    // B stays at 89 (repositioned during locked link creation, not pushed further after unlock)
-    expect(freshDst.startCol).toBe(89);
-    expect(freshDst.endCol).toBe(93);
+    // B should stay at its position from before the move (unlocked link doesn't push)
+    expect(freshDst.startCol).toBe(bBeforeMove);
   });
 
   it('creating link on packages that already violate constraint should reposition', async () => {
@@ -451,7 +453,7 @@ describe('Link movement cascading via API', () => {
       url: `/buildings/${buildingId}/links`, headers: H,
       payload: { sourceId: srcPkg.id, destinationId: dstPkg.id, latency: 0 } });
     expect(linkRes.statusCode).toBe(201);
-    const linkId: string = linkRes.json().id;
+    const linkId: string = linkRes.json().link.id;
 
     // Move source far right
     await app.inject({ method: 'POST',
