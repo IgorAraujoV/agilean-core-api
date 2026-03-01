@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import type { Network } from 'agilean';
 import { BuildingStorage } from '../storage/BuildingStorage';
 import { LineRepository } from '../database/LineRepository';
+import { safeISOString, safeISOStringRequired } from './dateHelpers';
 
 interface PackageResponse {
   id: string;
@@ -88,13 +89,13 @@ export class LineService {
           stageId: pkg.getStageId(),
           startCol: pkg.start(),
           endCol: pkg.end(),
-          startDate: building.date(pkg.start()).toISOString(),
-          endDate: building.date(pkg.end()).toISOString(),
-          plannedStartDate: pkg.plannedStartDate().toISOString(),
-          plannedEndDate: pkg.plannedEndDate().toISOString(),
-          executionStart: pkg.getExecutionStart()?.toISOString() ?? null,
-          executionEnd: pkg.getExecutionEnd()?.toISOString() ?? null,
-          estimatedEnd: pkg.getEstimatedEnd()?.toISOString() ?? null,
+          startDate: safeISOStringRequired(building.date(pkg.start()), `pkg=${pkg.getId()} startCol=${pkg.start()}`),
+          endDate: safeISOStringRequired(building.date(pkg.end()), `pkg=${pkg.getId()} endCol=${pkg.end()}`),
+          plannedStartDate: safeISOStringRequired(pkg.plannedStartDate(), `pkg=${pkg.getId()} plannedStart`),
+          plannedEndDate: safeISOStringRequired(pkg.plannedEndDate(), `pkg=${pkg.getId()} plannedEnd`),
+          executionStart: pkg.getExecutionStart() ? safeISOString(pkg.getExecutionStart()!) : null,
+          executionEnd: pkg.getExecutionEnd() ? safeISOString(pkg.getExecutionEnd()!) : null,
+          estimatedEnd: pkg.getEstimatedEnd() ? safeISOString(pkg.getEstimatedEnd()!) : null,
           status: pkg.getStatus() as number,
           progress: pkg.getProgress(),
           cost: pkg.getCost(),

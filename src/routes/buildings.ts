@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { Building } from 'agilean';
 import { BuildingService } from '../services/BuildingService';
+import { AglImportService } from '../services/AglImportService';
+import { AglExportService } from '../services/AglExportService';
 import { CreateBuildingSchema } from '../schemas';
 import { BuildingSummary, ErrorResponse, BuildingIdParam } from '../schemas/openapi';
 
@@ -61,6 +63,60 @@ export async function buildingRoutes(app: FastifyInstance): Promise<void> {
       today: r.today,
       todayEnabled: r.todayEnabled !== 0,
     }));
+  });
+
+  app.post('/buildings/import', {
+    bodyLimit: 200 * 1024 * 1024, // 200MB — AGL files can be 60-100MB
+    schema: {
+      tags: ['Buildings'],
+      summary: 'Importar building a partir de AGL JSON',
+      body: { type: 'object', additionalProperties: true },
+      response: {
+        201: BuildingSummary,
+        400: ErrorResponse,
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const importService = new AglImportService(app.ctx.db, app.ctx.storage);
+      const building = importService.import(request.body as Record<string, unknown>, request.user.userId);
+      return reply.status(201).send(buildingToResponse(building));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro ao importar AGL';
+      return reply.status(400).send({ error: message });
+    }
+  });
+
+  app.get('/buildings/:buildingId/export', {
+    schema: {
+      tags: ['Buildings'],
+      summary: 'Exportar building como AGL JSON',
+      params: BuildingIdParam,
+      response: {
+        200: { type: 'object', additionalProperties: true },
+        404: ErrorResponse,
+      },
+    },
+  }, async (request, reply) => {
+    const { buildingId } = request.params as { buildingId: string };
+
+    // Verificar acesso do usuario via building_users
+    const access = app.ctx.db
+      .prepare('SELECT 1 FROM building_users WHERE building_id = ? AND user_id = ?')
+      .get(buildingId, request.user.userId);
+    if (!access) return reply.status(404).send({ error: 'Building not found' });
+
+    const exportService = new AglExportService(app.ctx.db);
+    const agl = exportService.export(buildingId);
+    if (!agl) return reply.status(404).send({ error: 'Building not found' });
+
+    const buildingName = (agl.company?.buildingCompanies?.[0]?.branchOffices?.[0]?.buildings?.[0]?.name as string) ?? 'building';
+    const safeName = buildingName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    return reply
+      .header('Content-Disposition', `attachment; filename="${safeName}.agl"`)
+      .header('Content-Type', 'application/json')
+      .send(agl);
   });
 
   app.get('/buildings/:buildingId', {
