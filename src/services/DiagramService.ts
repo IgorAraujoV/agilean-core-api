@@ -80,6 +80,12 @@ export class DiagramService {
     network.name = name;
     diagram.appendNetwork(network);
     this.repo.insertNetwork(network, diagramId);
+
+    // Drain ChangeSet — appendNetwork inserts Insertion Network change.
+    // Without draining, this stale change corrupts state when applyDiagramChanges
+    // runs later (e.g. when a stage is added with lines present).
+    building.applyDiagramChanges();
+
     return network;
   }
 
@@ -117,6 +123,11 @@ export class DiagramService {
     // Apply BFS + persist new teams and packages for existing Lines
     if (propagation && snapshotCtx) {
       propagation.applyAndPersist(building, snapshotCtx);
+    } else {
+      // No lines to propagate, but still drain the ChangeSet to keep it clean.
+      // Without this, stale changes (e.g. Insertion Network) accumulate and
+      // corrupt state when applyDiagramChanges runs later with lines present.
+      building.applyDiagramChanges();
     }
 
     return stage;
@@ -141,6 +152,9 @@ export class DiagramService {
 
     if (propagation && snapshotCtx) {
       propagation.applyAndPersist(building, snapshotCtx);
+    } else {
+      // No lines to propagate, but still drain the ChangeSet to keep it clean.
+      building.applyDiagramChanges();
     }
 
     return {

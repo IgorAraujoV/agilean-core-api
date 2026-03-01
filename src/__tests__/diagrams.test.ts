@@ -442,6 +442,82 @@ describe('Diagrams, Networks & Precedences API', () => {
     });
   });
 
+  // === Stage insertion should propagate to existing Lines ===
+
+  describe('Stage propagation to existing Lines', () => {
+    async function createTypology(a: ReturnType<typeof app>, token: string, buildingId: string, name: string, parentId?: string) {
+      const res = await a.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token),
+        payload: parentId ? { name, parentId } : { name },
+      });
+      return res.json() as { id: string; name: string };
+    }
+
+    it('should create packages when adding a stage to a diagram that already has lines', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+
+      // 1. Create diagram + network + 1 stage
+      const diagram = await createDiagram(a, token, bid, 'Estrutural');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'Fundação', 10);
+
+      // 2. Create typology: Unit > Floor1, Floor2
+      const unit = await createTypology(a, token, bid, 'Bloco A');
+      await createTypology(a, token, bid, 'Piso 1', unit.id);
+      await createTypology(a, token, bid, 'Piso 2', unit.id);
+
+      // 3. Create a line (should create 2 packages: 1 stage × 2 floors)
+      const lineRes = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/lines`,
+        headers: authHeaders(token),
+        payload: { networkId: network.id, placeId: unit.id },
+      });
+      expect(lineRes.statusCode).toBe(201);
+      const lineId: string = lineRes.json().id;
+      const initialPkgCount: number = lineRes.json().packageCount;
+      expect(initialPkgCount).toBe(2); // 1 stage × 2 floors
+
+      // 4. Verify packages via API
+      const pkgsBeforeRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      expect(pkgsBeforeRes.json()).toHaveLength(2);
+
+      // 5. NOW add a second stage to the same network
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'Estrutura', 8);
+
+      // 6. Verify packages via API — should now be 4 (2 stages × 2 floors)
+      const pkgsAfterRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      const pkgsAfter = pkgsAfterRes.json();
+      expect(pkgsAfter).toHaveLength(4);
+
+      // 7. Verify the new packages are in the DB too
+      const dbCount = a.ctx.db
+        .prepare('SELECT COUNT(*) as n FROM packages')
+        .get() as { n: number };
+      expect(dbCount.n).toBe(4);
+
+      // 8. Verify no duplicate lines were created
+      const linesRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/lines`,
+        headers: authHeaders(token),
+      });
+      expect(linesRes.json()).toHaveLength(1);
+    });
+  });
+
   // === Cenário Completo: 2 Diagrams, cada um com network + stages + precedences ===
 
   describe('Integration: 2 diagrams with networks, stages and precedences', () => {
