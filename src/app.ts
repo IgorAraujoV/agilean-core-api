@@ -3,6 +3,7 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import fastifyJwt from '@fastify/jwt';
 import { ZodError } from 'zod';
+import { AppError } from './errors/AppError';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
 import { buildingRoutes } from './routes/buildings';
@@ -129,6 +130,12 @@ export function buildApp(opts: BuildAppOptions = {}) {
   });
 
   app.setErrorHandler(async (error: Error & { validation?: unknown; statusCode?: number }, _request, reply) => {
+    if (error instanceof AppError) {
+      const body: { error: string; code?: string; details?: unknown } = { error: error.message };
+      if (error.code !== undefined) body.code = error.code;
+      if (error.details !== undefined) body.details = error.details;
+      return reply.status(error.statusCode).send(body);
+    }
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'Validation error',
@@ -144,7 +151,8 @@ export function buildApp(opts: BuildAppOptions = {}) {
     if (error.statusCode) {
       return reply.status(error.statusCode).send({ error: error.message });
     }
-    return reply.status(500).send({ error: 'Internal server error' });
+    console.error('[500]', error.message, error.stack);
+    return reply.status(500).send({ error: error.message, code: 'INTERNAL_ERROR' });
   });
 
   // authRoutes registrado ANTES das demais para garantir que /auth/login existe
