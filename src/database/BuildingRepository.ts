@@ -30,6 +30,41 @@ export class BuildingRepository {
     `).all(userId) as BuildingSummaryRow[];
   }
 
+  /**
+   * Deleta building e todas as entidades dependentes (cascade).
+   * Precedences e links precisam de delete manual (FKs sem CASCADE).
+   * Deve rodar dentro de uma transação.
+   */
+  deleteWithCascade(buildingId: string): void {
+    // Links: dest_id FK sem CASCADE — deletar primeiro
+    this.db.prepare(`
+      DELETE FROM links WHERE source_id IN (
+        SELECT p.id FROM packages p
+        JOIN teams t ON t.id = p.team_id
+        JOIN lines l ON l.id = t.line_id
+        WHERE l.building_id = ?
+      )
+    `).run(buildingId);
+    this.db.prepare(`
+      DELETE FROM links WHERE dest_id IN (
+        SELECT p.id FROM packages p
+        JOIN teams t ON t.id = p.team_id
+        JOIN lines l ON l.id = t.line_id
+        WHERE l.building_id = ?
+      )
+    `).run(buildingId);
+
+    // Precedences: source_stage_id/dest_stage_id FKs sem CASCADE
+    this.db.prepare(`
+      DELETE FROM precedences WHERE diagram_id IN (
+        SELECT id FROM diagrams WHERE building_id = ?
+      )
+    `).run(buildingId);
+
+    // O restante cascateia automaticamente a partir de DELETE buildings
+    this.db.prepare('DELETE FROM buildings WHERE id = ?').run(buildingId);
+  }
+
   findById(id: string, userId: string): BuildingSummaryRow | null {
     const row = this.db.prepare(`
       SELECT

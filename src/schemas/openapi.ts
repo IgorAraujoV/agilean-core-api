@@ -63,6 +63,33 @@ export const DiagramDetail = {
   },
 } as const;
 
+export const ImportWarningItem = {
+  type: 'object',
+  properties: {
+    type: { type: 'string' },
+    packageId: { type: 'string' },
+    stageId: { type: 'string' },
+    placeId: { type: 'string' },
+    stageName: { type: 'string' },
+    original: { type: 'object', properties: { startCol: { type: 'number' }, endCol: { type: 'number' } } },
+    corrected: { type: 'object', properties: { startCol: { type: 'number' }, endCol: { type: 'number' } } },
+  },
+} as const;
+
+export const ImportResult = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    name: { type: 'string' },
+    diagramCount: { type: 'number' },
+    placeCount: { type: 'number' },
+    firstDate: { type: 'string', format: 'date-time' },
+    today: { type: 'string', format: 'date-time' },
+    todayEnabled: { type: 'boolean' },
+    warnings: { type: 'array', items: ImportWarningItem },
+  },
+} as const;
+
 export const ErrorResponse = {
   type: 'object',
   properties: {

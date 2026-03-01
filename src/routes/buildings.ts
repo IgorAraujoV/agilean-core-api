@@ -4,7 +4,7 @@ import { BuildingService } from '../services/BuildingService';
 import { AglImportService } from '../services/AglImportService';
 import { AglExportService } from '../services/AglExportService';
 import { CreateBuildingSchema } from '../schemas';
-import { BuildingSummary, ErrorResponse, BuildingIdParam } from '../schemas/openapi';
+import { BuildingSummary, ImportResult as ImportResultSchema, ErrorResponse, BuildingIdParam } from '../schemas/openapi';
 
 function buildingToResponse(building: Building) {
   return {
@@ -72,15 +72,15 @@ export async function buildingRoutes(app: FastifyInstance): Promise<void> {
       summary: 'Importar building a partir de AGL JSON',
       body: { type: 'object', additionalProperties: true },
       response: {
-        201: BuildingSummary,
+        201: ImportResultSchema,
         400: ErrorResponse,
       },
     },
   }, async (request, reply) => {
     try {
       const importService = new AglImportService(app.ctx.db, app.ctx.storage);
-      const building = importService.import(request.body as Record<string, unknown>, request.user.userId);
-      return reply.status(201).send(buildingToResponse(building));
+      const { building, warnings } = importService.import(request.body as Record<string, unknown>, request.user.userId);
+      return reply.status(201).send({ ...buildingToResponse(building), warnings });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro ao importar AGL';
       return reply.status(400).send({ error: message });
@@ -117,6 +117,23 @@ export async function buildingRoutes(app: FastifyInstance): Promise<void> {
       .header('Content-Disposition', `attachment; filename="${safeName}.agl"`)
       .header('Content-Type', 'application/json')
       .send(agl);
+  });
+
+  app.delete('/buildings/:buildingId', {
+    schema: {
+      tags: ['Buildings'],
+      summary: 'Deletar um building e toda sua cascata',
+      params: BuildingIdParam,
+      response: {
+        204: { type: 'null' },
+        404: ErrorResponse,
+      },
+    },
+  }, async (request, reply) => {
+    const { buildingId } = request.params as { buildingId: string };
+    const deleted = service.delete(buildingId, request.user.userId);
+    if (!deleted) return reply.status(404).send({ error: 'Building not found' });
+    return reply.status(204).send();
   });
 
   app.get('/buildings/:buildingId', {

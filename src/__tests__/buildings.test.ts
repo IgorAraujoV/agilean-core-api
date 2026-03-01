@@ -77,6 +77,93 @@ describe('Buildings API', () => {
     expect(response.json().error).toBeDefined();
   });
 
+  it('DELETE /buildings/:buildingId should delete a building', async () => {
+    const app = buildApp();
+    const token = await getAuthToken(app);
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/buildings',
+      headers: authHeaders(token),
+      payload: { name: 'To Delete', firstDate: '2024-01-01' },
+    });
+    const { id } = createRes.json();
+
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/buildings/${id}`,
+      headers: authHeaders(token),
+    });
+    expect(delRes.statusCode).toBe(204);
+
+    // Verify it's gone
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/buildings/${id}`,
+      headers: authHeaders(token),
+    });
+    expect(getRes.statusCode).toBe(404);
+  });
+
+  it('DELETE /buildings/:buildingId should cascade-delete diagrams, lines, packages', async () => {
+    const app = buildApp();
+    const token = await getAuthToken(app);
+
+    // Create building with content
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/buildings',
+      headers: authHeaders(token),
+      payload: { name: 'Full Delete', firstDate: '2024-01-01' },
+    });
+    const { id } = createRes.json();
+
+    // Add a diagram
+    const diagRes = await app.inject({
+      method: 'POST',
+      url: `/buildings/${id}/diagrams`,
+      headers: authHeaders(token),
+      payload: { name: 'Net 1' },
+    });
+    expect(diagRes.statusCode).toBe(201);
+
+    // Delete building
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/buildings/${id}`,
+      headers: authHeaders(token),
+    });
+    expect(delRes.statusCode).toBe(204);
+
+    // Verify building is gone
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/buildings/${id}`,
+      headers: authHeaders(token),
+    });
+    expect(getRes.statusCode).toBe(404);
+
+    // Verify building not in list
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/buildings',
+      headers: authHeaders(token),
+    });
+    expect(listRes.json()).toHaveLength(0);
+  });
+
+  it('DELETE /buildings/:buildingId should return 404 for unknown', async () => {
+    const app = buildApp();
+    const token = await getAuthToken(app);
+
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: '/buildings/nonexistent',
+      headers: authHeaders(token),
+    });
+    expect(delRes.statusCode).toBe(404);
+  });
+
   it('GET /buildings/:buildingId should return 404 for unknown', async () => {
     const app = buildApp();
     const token = await getAuthToken(app);
