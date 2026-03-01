@@ -4,6 +4,7 @@ import type { BuildingStorage } from '../storage/BuildingStorage';
 import { LinkRepository } from '../database/LinkRepository';
 import type { Database } from 'better-sqlite3';
 import type { MovePatch } from './MovementEndpointService';
+import { safeISOStringRequired } from './dateHelpers';
 
 export interface LinkResponse {
   id: string;
@@ -177,8 +178,8 @@ export class LinkEndpointService {
             id: pkg.getId(),
             startCol: pkg.start(),
             endCol: pkg.end(),
-            startDate: building.date(pkg.start()).toISOString(),
-            endDate: building.date(pkg.end()).toISOString(),
+            startDate: safeISOStringRequired(building.date(pkg.start()), `link pkg=${pkg.getId()} startCol=${pkg.start()}`),
+            endDate: safeISOStringRequired(building.date(pkg.end()), `link pkg=${pkg.getId()} endCol=${pkg.end()}`),
           });
         }
       }

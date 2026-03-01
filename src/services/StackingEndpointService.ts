@@ -1,6 +1,7 @@
 import type { Package, Team } from 'agilean';
 import type { BuildingStorage } from '../storage/BuildingStorage';
 import type { Database } from 'better-sqlite3';
+import { safeISOStringRequired } from './dateHelpers';
 
 export interface StackPatch {
   id: string;
@@ -145,8 +146,8 @@ export class StackingEndpointService {
         id: p.getId(),
         startCol: p.start(),
         endCol: p.end(),
-        startDate: building.date(p.start()).toISOString(),
-        endDate: building.date(p.end()).toISOString(),
+        startDate: safeISOStringRequired(building.date(p.start()), `stack pkg=${p.getId()} startCol=${p.start()}`),
+        endDate: safeISOStringRequired(building.date(p.end()), `stack pkg=${p.getId()} endCol=${p.end()}`),
         teamId: p.getTeamId(),
       })),
       createdTeams,

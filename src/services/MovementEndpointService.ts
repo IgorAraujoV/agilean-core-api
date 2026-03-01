@@ -3,6 +3,7 @@ import type { Package } from 'agilean';
 import type { BuildingStorage } from '../storage/BuildingStorage';
 import { PackageRepository } from '../database/PackageRepository';
 import type { Database } from 'better-sqlite3';
+import { safeISOStringRequired } from './dateHelpers';
 
 export interface MovePatch {
   id: string;
@@ -48,8 +49,8 @@ export class MovementEndpointService {
         id: p.getId(),
         startCol: p.start(),
         endCol: p.end(),
-        startDate: building.date(p.start()).toISOString(),
-        endDate: building.date(p.end()).toISOString(),
+        startDate: safeISOStringRequired(building.date(p.start()), `move pkg=${p.getId()} startCol=${p.start()}`),
+        endDate: safeISOStringRequired(building.date(p.end()), `move pkg=${p.getId()} endCol=${p.end()}`),
       })),
     };
   }
