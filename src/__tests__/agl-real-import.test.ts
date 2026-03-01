@@ -20,11 +20,12 @@ const hasRealFile = fs.existsSync(AGL_PATH);
     const importService = new AglImportService(db, app.ctx.storage);
 
     // This should throw with full stack trace if there's a FK error
-    const building = importService.import(agl, userId);
+    const { building, warnings } = importService.import(agl, userId);
 
     expect(building.id).toBeTruthy();
     expect(building.name).toBeTruthy();
     expect(building.allPlaces().length).toBe(162);
     expect(building.allDiagrams().length).toBe(17);
+    expect(Array.isArray(warnings)).toBe(true);
   });
 });

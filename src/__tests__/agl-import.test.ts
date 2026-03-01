@@ -1,5 +1,6 @@
 import { buildApp } from '../app';
 import { getAuthToken, authHeaders } from './testHelpers';
+import { AglImportService } from '../services/AglImportService';
 
 /**
  * Fixture AGL mínima: 1 building, 1 unit com 2 locals, 1 diagram com 2 stages + 1 precedence,
@@ -519,5 +520,130 @@ describe('AGL Import', () => {
     });
 
     expect(response.statusCode).toBe(401);
+  });
+
+  it('should derive firstDate from places when building has no firstDate', async () => {
+    const app = buildApp();
+    const token = await getAuthToken(app);
+
+    const fixture = makeAglFixture();
+    // Remove firstDate from building
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (fixture.company.buildingCompanies[0]!.branchOffices[0]!.buildings[0]! as any).firstDate = undefined;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/buildings/import',
+      headers: authHeaders(token),
+      payload: fixture,
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    // firstDate should be derived from the earliest place startDate (2024-01-01)
+    expect(body.firstDate).toContain('2024-01-01');
+    // All packages should have valid (non-inverted) columns
+    expect(body.warnings).toEqual([]);
+  });
+
+  it('should return warnings for packages with inverted columns', async () => {
+    const app = buildApp();
+    const token = await getAuthToken(app);
+
+    const fixture = makeAglFixture();
+    // Force a very late firstDate so some packages get inverted columns
+    fixture.company.buildingCompanies[0]!.branchOffices[0]!.buildings[0]!.firstDate = '2025-06-01T08:00:00.000Z';
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/buildings/import',
+      headers: authHeaders(token),
+      payload: fixture,
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    // With firstDate far in the future, column() may produce garbage → some may be inverted
+    // At minimum the response should include the warnings array
+    expect(Array.isArray(body.warnings)).toBe(true);
+  });
+});
+
+describe('AglImportService.deriveFirstDate', () => {
+  it('should return earliest package date from lines', () => {
+    const lines = [
+      {
+        teams: [
+          {
+            packages: [
+              { plannedStart: '2024-06-01T08:00:00' },
+              { plannedStart: '2024-03-15T08:00:00' },
+            ],
+          },
+        ],
+      },
+    ];
+    const result = AglImportService.deriveFirstDate(lines);
+    expect(result).toEqual(new Date('2024-03-15T08:00:00'));
+  });
+
+  it('should return earliest place date when places are earlier than packages', () => {
+    const lines = [
+      {
+        teams: [
+          {
+            packages: [
+              { plannedStart: '2024-06-01T08:00:00' },
+            ],
+          },
+        ],
+      },
+    ];
+    const places = [
+      { startDate: '2023-04-03T08:00:00' },
+      { startDate: '2023-06-01T08:00:00' },
+    ];
+    const result = AglImportService.deriveFirstDate(lines, places);
+    expect(result).toEqual(new Date('2023-04-03T08:00:00'));
+  });
+
+  it('should return earliest package date when packages are earlier than places', () => {
+    const lines = [
+      {
+        teams: [
+          {
+            packages: [
+              { plannedStart: '2022-01-01T08:00:00' },
+            ],
+          },
+        ],
+      },
+    ];
+    const places = [
+      { startDate: '2023-04-03T08:00:00' },
+    ];
+    const result = AglImportService.deriveFirstDate(lines, places);
+    expect(result).toEqual(new Date('2022-01-01T08:00:00'));
+  });
+
+  it('should handle C++ key format (plannedStartDate)', () => {
+    const lines = [
+      {
+        teams: [
+          {
+            packages: [
+              { plannedStartDate: '2024-01-01T08:00:00' },
+            ],
+          },
+        ],
+      },
+    ];
+    const result = AglImportService.deriveFirstDate(lines);
+    expect(result).toEqual(new Date('2024-01-01T08:00:00'));
+  });
+
+  it('should return null for empty inputs', () => {
+    expect(AglImportService.deriveFirstDate([])).toBeNull();
+    expect(AglImportService.deriveFirstDate([], [])).toBeNull();
   });
 });

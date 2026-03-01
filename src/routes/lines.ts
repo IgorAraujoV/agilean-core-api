@@ -43,7 +43,7 @@ export async function lineRoutes(app: FastifyInstance): Promise<void> {
         properties: { buildingId: { type: 'string' } } },
       response: {
         200: { type: 'array', items: { type: 'object', properties: {
-          id: { type: 'string' }, networkId: { type: 'string' }, placeId: { type: 'string' } } } },
+          id: { type: 'string' }, networkId: { type: 'string' }, diagramId: { type: 'string' }, placeId: { type: 'string' } } } },
       },
     },
   }, async (request) => {

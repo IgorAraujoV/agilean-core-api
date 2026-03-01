@@ -42,4 +42,17 @@ export class BuildingService {
   list(userId: string): BuildingSummaryRow[] {
     return this.buildingRepo.findAllForUser(userId);
   }
+
+  delete(buildingId: string, userId: string): boolean {
+    const row = this.buildingRepo.findById(buildingId, userId);
+    if (!row) return false;
+
+    const transaction = this.db.transaction(() => {
+      this.buildingRepo.deleteWithCascade(buildingId);
+    });
+    transaction();
+
+    this.storage.delete(buildingId);
+    return true;
+  }
 }

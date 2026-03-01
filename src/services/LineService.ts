@@ -60,12 +60,13 @@ export class LineService {
     return { id: line.getId(), packageCount };
   }
 
-  list(buildingId: string): Array<{ id: string; networkId: string; placeId: string }> {
+  list(buildingId: string): Array<{ id: string; networkId: string; diagramId: string; placeId: string }> {
     const building = this.storage.get(buildingId);
     if (!building) return [];
     return building.lineStore.all().map(d => ({
       id: d.id,
       networkId: d.networkId,
+      diagramId: d.diagramId,
       placeId: d.placeId,
     }));
   }

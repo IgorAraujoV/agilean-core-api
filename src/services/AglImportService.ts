@@ -9,6 +9,21 @@ import { AglNormalizer } from './AglNormalizer';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyObj = Record<string, any>;
 
+export interface ImportWarning {
+  type: 'inverted_columns';
+  packageId: string;
+  stageId: string;
+  placeId: string;
+  stageName: string;
+  original: { startCol: number; endCol: number };
+  corrected: { startCol: number; endCol: number };
+}
+
+export interface ImportResult {
+  building: Building;
+  warnings: ImportWarning[];
+}
+
 /**
  * Serviço de importação de AGL.
  *
@@ -34,18 +49,29 @@ export class AglImportService {
 
   /**
    * Importa AGL completo: cria Building, Diagrams, Places, Lines, Teams, Packages e Links.
-   * @returns Building criado no domínio
+   * Valida e corrige inconsistências do AGL antigo (ex: colunas invertidas).
+   * @returns ImportResult com building criado e warnings de correções aplicadas
    */
-  import(aglJson: AnyObj, userId: string): Building {
+  import(aglJson: AnyObj, userId: string): ImportResult {
+    const warnings: ImportWarning[] = [];
+
     // 1. Extrair dados do wrapper AGL (normaliza chaves de packages C++ → TS)
     const { building: buildingJson, diagrams: diagramsJson, lines: linesJson } =
       AglNormalizer.extractBuildingFromAgl(aglJson);
 
-    // 2. Criar Building no domínio
+    // 2. Determinar firstDate: usar campo do AGL, ou derivar da menor data entre packages e places.
+    // O ACal precisa iniciar ANTES de todas as datas de packages para column() funcionar.
+    const placesJson = (buildingJson['places'] as AnyObj[] | undefined) ?? [];
+    let firstDate = buildingJson['firstDate'] ? new Date(buildingJson['firstDate'] as string) : null;
+    if (!firstDate || isNaN(firstDate.getTime())) {
+      firstDate = AglImportService.deriveFirstDate(linesJson, placesJson) ?? new Date();
+    }
+
+    // 3. Criar Building no domínio
     const building = new Building({
       id: buildingJson['id'] as string | undefined,
       name: (buildingJson['name'] as string) || 'Imported Building',
-      firstDate: buildingJson['firstDate'] ? new Date(buildingJson['firstDate'] as string) : new Date(),
+      firstDate,
       today: buildingJson['today'] ? new Date(buildingJson['today'] as string) : new Date(),
       todayEnabled: buildingJson['todayEnabled'] === true,
     });
@@ -66,7 +92,6 @@ export class AglImportService {
     building.applyDiagramChanges();
 
     // 4. Criar Places (sorted by level — pais antes de filhos)
-    const placesJson = (buildingJson['places'] as AnyObj[] | undefined) ?? [];
     const sortedPlaces = [...placesJson].sort(
       (a, b) => ((a['level'] as number) ?? 0) - ((b['level'] as number) ?? 0),
     );
@@ -152,6 +177,26 @@ export class AglImportService {
             endCol = startCol + duration - 1;
           }
 
+          // Validação: AGL antigo pode ter endDate < startDate (colunas invertidas).
+          // Corrigir usando a duration do stage no diagrama.
+          if (startCol > endCol && startCol > 0) {
+            const originalStartCol = startCol;
+            const originalEndCol = endCol;
+            const stageData = building.stageStore.get(pkgStageId);
+            const stageDuration = stageData?.duration ?? 1;
+            endCol = startCol + stageDuration - 1;
+
+            warnings.push({
+              type: 'inverted_columns',
+              packageId: pkgId,
+              stageId: pkgStageId,
+              placeId: pkgPlaceId,
+              stageName: stageData?.name ?? '',
+              original: { startCol: originalStartCol, endCol: originalEndCol },
+              corrected: { startCol, endCol },
+            });
+          }
+
           const pkg = Package.createPackage(pkgPlaceId, team, pkgCode, endCol - startCol + 1, pkgId);
           pkg.setStageId(pkgStageId);
           // Setar posições exatas das colunas (como BuildingLoader)
@@ -187,7 +232,46 @@ export class AglImportService {
     // 8. Salvar no storage in-memory
     this.storage.save(building, userId);
 
-    return building;
+    return { building, warnings };
+  }
+
+  /**
+   * Varre packages e places do AGL e retorna a menor data encontrada.
+   * Packages usam plannedStart/plannedStartDate; places usam startDate.
+   * Usado para derivar firstDate quando o building AGL não tem o campo.
+   */
+  static deriveFirstDate(linesJson: AnyObj[], placesJson?: AnyObj[]): Date | null {
+    let earliest: Date | null = null;
+
+    const consider = (raw: string | null | undefined) => {
+      if (!raw) return;
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return;
+      if (!earliest || d.getTime() < earliest.getTime()) {
+        earliest = d;
+      }
+    };
+
+    // Datas das places (unidades podem ter startDate anterior aos packages)
+    if (placesJson) {
+      for (const pJson of placesJson) {
+        consider(pJson['startDate'] as string | null);
+      }
+    }
+
+    // Datas dos packages
+    for (const lineJson of linesJson) {
+      const teamsJson = (lineJson['teams'] as AnyObj[]) ?? [];
+      for (const teamJson of teamsJson) {
+        const packagesJson = (teamJson['packages'] as AnyObj[]) ?? [];
+        for (const pkgJson of packagesJson) {
+          // Chaves já normalizadas C++ → TS pelo AglNormalizer
+          consider((pkgJson['plannedStart'] as string | null) ?? (pkgJson['plannedStartDate'] as string | null));
+        }
+      }
+    }
+
+    return earliest;
   }
 
   /**
