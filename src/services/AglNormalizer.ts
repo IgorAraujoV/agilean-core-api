@@ -199,7 +199,7 @@ export class AglNormalizer {
       budgetItems: [],
       createdDate: now,
       updatedDate: now,
-      fileScheduleId: randomUUID(),
+      fileScheduleId: buildingId,
     };
   }
 }

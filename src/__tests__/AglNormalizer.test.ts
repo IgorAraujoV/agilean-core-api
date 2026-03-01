@@ -662,7 +662,7 @@ describe('AglNormalizer', () => {
       expect(result.budgetItems).toEqual([]);
       expect(result.createdDate).toBeDefined();
       expect(result.updatedDate).toBeDefined();
-      expect(result.fileScheduleId).toBeDefined();
+      expect(result.fileScheduleId).toBe('b-1');
       // createdDate and updatedDate should be valid ISO strings
       expect(() => new Date(result.createdDate)).not.toThrow();
       expect(() => new Date(result.updatedDate)).not.toThrow();
