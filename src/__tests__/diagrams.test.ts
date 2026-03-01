@@ -321,6 +321,16 @@ describe('Diagrams, Networks & Precedences API', () => {
   });
 
   describe('Delete stage', () => {
+    async function createTypology(a: ReturnType<typeof app>, token: string, buildingId: string, name: string, parentId?: string) {
+      const res = await a.inject({
+        method: 'POST',
+        url: `/buildings/${buildingId}/typologies`,
+        headers: authHeaders(token),
+        payload: parentId ? { name, parentId } : { name },
+      });
+      return res.json() as { id: string; name: string };
+    }
+
     it('should delete a stage', async () => {
       const a = app();
       const token = await getAuthToken(a);
@@ -341,6 +351,198 @@ describe('Diagrams, Networks & Precedences API', () => {
       });
       const stageIds = getRes.json().networks[0].stages.map((s: any) => s.id);
       expect(stageIds).not.toContain(stage.id);
+    });
+
+    it('should delete a stage when diagram has lines (teams and packages exist)', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+
+      // 1. Create diagram + network + 2 stages
+      const diagram = await createDiagram(a, token, bid, 'Estrutural');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'Fundação', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'Estrutura', 8);
+
+      // 2. Create typology: Unit > Floor1, Floor2
+      const unit = await createTypology(a, token, bid, 'Bloco A');
+      await createTypology(a, token, bid, 'Piso 1', unit.id);
+      await createTypology(a, token, bid, 'Piso 2', unit.id);
+
+      // 3. Create a line (2 stages × 2 floors = 4 packages)
+      const lineRes = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/lines`,
+        headers: authHeaders(token),
+        payload: { networkId: network.id, placeId: unit.id },
+      });
+      expect(lineRes.statusCode).toBe(201);
+      const lineId: string = lineRes.json().id;
+      expect(lineRes.json().packageCount).toBe(4);
+
+      // 4. Delete stageB (the one we'll remove)
+      const deleteRes = await a.inject({
+        method: 'DELETE',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages/${stageB.id}`,
+        headers: authHeaders(token),
+      });
+      expect(deleteRes.statusCode).toBe(204);
+
+      // 5. Verify stage was removed from diagram
+      const getRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+      const stageIds = getRes.json().networks[0].stages.map((s: any) => s.id);
+      expect(stageIds).not.toContain(stageB.id);
+      expect(stageIds).toContain(stageA.id);
+
+      // 6. Verify packages reduced to 2 (1 stage × 2 floors)
+      const pkgsRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      expect(pkgsRes.json()).toHaveLength(2);
+
+      // 7. Verify DB is clean — no orphaned teams/packages referencing deleted stage
+      const teamsInDb = a.ctx.db
+        .prepare('SELECT COUNT(*) as n FROM teams WHERE stage_id = @stageId')
+        .get({ stageId: stageB.id }) as { n: number };
+      expect(teamsInDb.n).toBe(0);
+
+      const pkgsInDb = a.ctx.db
+        .prepare('SELECT COUNT(*) as n FROM packages WHERE stage_id = @stageId')
+        .get({ stageId: stageB.id }) as { n: number };
+      expect(pkgsInDb.n).toBe(0);
+    });
+
+    it('should delete a stage that has precedences and packages in lines', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+
+      // 1. Create diagram + network + 3 stages with precedences (A→B→C)
+      const diagram = await createDiagram(a, token, bid, 'Estrutural');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stageA = await addStage(a, token, bid, diagram.id, network.id, 'Fundação', 10);
+      const stageB = await addStage(a, token, bid, diagram.id, network.id, 'Estrutura', 8);
+      const stageC = await addStage(a, token, bid, diagram.id, network.id, 'Alvenaria', 6);
+
+      const precAB = await addPrecedence(a, token, bid, diagram.id, stageA.id, stageB.id);
+      expect(precAB.statusCode).toBe(201);
+      const precBC = await addPrecedence(a, token, bid, diagram.id, stageB.id, stageC.id);
+      expect(precBC.statusCode).toBe(201);
+
+      // 2. Create typology + line
+      const unit = await createTypology(a, token, bid, 'Bloco A');
+      await createTypology(a, token, bid, 'Piso 1', unit.id);
+      await createTypology(a, token, bid, 'Piso 2', unit.id);
+
+      const lineRes = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/lines`,
+        headers: authHeaders(token),
+        payload: { networkId: network.id, placeId: unit.id },
+      });
+      expect(lineRes.statusCode).toBe(201);
+      const lineId: string = lineRes.json().id;
+      expect(lineRes.json().packageCount).toBe(6); // 3 stages × 2 floors
+
+      // 3. Delete stageB (middle stage — has 2 precedences: A→B and B→C)
+      const deleteRes = await a.inject({
+        method: 'DELETE',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages/${stageB.id}`,
+        headers: authHeaders(token),
+      });
+      expect(deleteRes.statusCode).toBe(204);
+
+      // 4. Verify stage removed, others remain
+      const getRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+      const stageIds = getRes.json().networks[0].stages.map((s: any) => s.id);
+      expect(stageIds).not.toContain(stageB.id);
+      expect(stageIds).toContain(stageA.id);
+      expect(stageIds).toContain(stageC.id);
+
+      // 5. Precedences referencing stageB should be gone
+      const precIds = getRes.json().precedences.map((p: any) => p.id);
+      expect(precIds).not.toContain(precAB.json().id);
+      expect(precIds).not.toContain(precBC.json().id);
+
+      // 6. Packages reduced to 4 (2 stages × 2 floors)
+      const pkgsRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/lines/${lineId}/packages`,
+        headers: authHeaders(token),
+      });
+      expect(pkgsRes.json()).toHaveLength(4);
+
+      // 7. DB clean
+      const teamsInDb = a.ctx.db
+        .prepare('SELECT COUNT(*) as n FROM teams WHERE stage_id = @stageId')
+        .get({ stageId: stageB.id }) as { n: number };
+      expect(teamsInDb.n).toBe(0);
+
+      const pkgsInDb = a.ctx.db
+        .prepare('SELECT COUNT(*) as n FROM packages WHERE stage_id = @stageId')
+        .get({ stageId: stageB.id }) as { n: number };
+      expect(pkgsInDb.n).toBe(0);
+
+      const precsInDb = a.ctx.db
+        .prepare('SELECT COUNT(*) as n FROM precedences WHERE source_stage_id = @stageId OR dest_stage_id = @stageId')
+        .get({ stageId: stageB.id }) as { n: number };
+      expect(precsInDb.n).toBe(0);
+    });
+
+    it('should return 409 when stage has active packages (status >= 3)', async () => {
+      const a = app();
+      const token = await getAuthToken(a);
+      const bid = await createBuilding(a, token);
+
+      // 1. Create diagram + network + stage
+      const diagram = await createDiagram(a, token, bid, 'Estrutural');
+      const network = await createNetwork(a, token, bid, diagram.id, 'Rede');
+      const stage = await addStage(a, token, bid, diagram.id, network.id, 'Fundação', 10);
+
+      // 2. Create typology + line
+      const unit = await createTypology(a, token, bid, 'Bloco A');
+      await createTypology(a, token, bid, 'Piso 1', unit.id);
+
+      const lineRes = await a.inject({
+        method: 'POST',
+        url: `/buildings/${bid}/lines`,
+        headers: authHeaders(token),
+        payload: { networkId: network.id, placeId: unit.id },
+      });
+      expect(lineRes.statusCode).toBe(201);
+
+      // 3. Simulate active package by setting status >= 3 directly in DB
+      a.ctx.db
+        .prepare('UPDATE packages SET status = 3 WHERE stage_id = @stageId')
+        .run({ stageId: stage.id });
+
+      // 4. Attempt to delete — should be blocked
+      const deleteRes = await a.inject({
+        method: 'DELETE',
+        url: `/buildings/${bid}/diagrams/${diagram.id}/networks/${network.id}/stages/${stage.id}`,
+        headers: authHeaders(token),
+      });
+      expect(deleteRes.statusCode).toBe(409);
+      expect(deleteRes.json().error).toContain('active packages');
+
+      // 5. Stage should still exist
+      const getRes = await a.inject({
+        method: 'GET',
+        url: `/buildings/${bid}/diagrams/${diagram.id}`,
+        headers: authHeaders(token),
+      });
+      const stageIds = getRes.json().networks[0].stages.map((s: any) => s.id);
+      expect(stageIds).toContain(stage.id);
     });
   });
 

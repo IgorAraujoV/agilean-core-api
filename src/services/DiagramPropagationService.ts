@@ -61,6 +61,9 @@ export class DiagramPropagationService {
       if (!line) continue;
 
       for (const team of line.teams()) {
+        // Pula teams órfãos (estado corrompido por operação anterior que falhou no meio)
+        if (!building.teamStore.has(team.getId())) continue;
+
         teamSnapshot.set(team.getId(), {
           lineId: line.getId(),
           stageId: team.getStageId(),
@@ -103,6 +106,10 @@ export class DiagramPropagationService {
       if (!line) continue;
 
       for (const team of line.teams()) {
+        // Pula teams que foram removidos do domínio (unregisterTeam remove do teamStore,
+        // mas Line._teamsByInternalId ainda os retorna)
+        if (!building.teamStore.has(team.getId())) continue;
+
         const isNewTeam = !teamSnapshot.has(team.getId());
         if (isNewTeam) {
           newTeams.push({ team, lineId: line.getId() });
@@ -131,8 +138,37 @@ export class DiagramPropagationService {
       }
     }
 
+    // Detecta packages e teams removidos via stores do domínio
+    // (unregisterTeam/unregisterPackage removem dos stores, mas Line._teamsByInternalId mantém referência)
+    const deletedPackageIds: string[] = [];
+    for (const pkgId of packageSnapshot.keys()) {
+      if (!building.packageStore.has(pkgId)) deletedPackageIds.push(pkgId);
+    }
+
+    const deletedTeamIds: string[] = [];
+    for (const teamId of teamSnapshot.keys()) {
+      if (!building.teamStore.has(teamId)) deletedTeamIds.push(teamId);
+    }
+
     // Persiste numa única transação SQLite
     this.db.transaction(() => {
+      // --- Deleções (links → packages → teams) ---
+      if (deletedPackageIds.length > 0) {
+        const ph = deletedPackageIds.map(() => '?').join(', ');
+        // Links: dest_id não tem ON DELETE CASCADE, precisa deletar explicitamente
+        this.db.prepare(`DELETE FROM links WHERE source_id IN (${ph}) OR dest_id IN (${ph})`)
+          .run(...deletedPackageIds, ...deletedPackageIds);
+        this.db.prepare(`DELETE FROM packages WHERE id IN (${ph})`)
+          .run(...deletedPackageIds);
+      }
+
+      if (deletedTeamIds.length > 0) {
+        const ph = deletedTeamIds.map(() => '?').join(', ');
+        this.db.prepare(`DELETE FROM teams WHERE id IN (${ph})`)
+          .run(...deletedTeamIds);
+      }
+
+      // --- Inserções ---
       // Insere novos teams e seus packages
       for (const { team, lineId } of newTeams) {
         this.structuralRepo.insertTeam({
