@@ -300,21 +300,26 @@ export class DiagramService {
     return { teamCount: teamsData.length, packageCount };
   }
 
-  deleteStage(building: Building, diagramId: string, networkId: string, stageId: string): boolean {
+  deleteStage(
+    building: Building, diagramId: string, networkId: string, stageId: string,
+  ): { deleted: true } | { notFound: true } | { blocked: true } {
     const diagram = building.getDiagram(diagramId);
-    if (!diagram) return false;
+    if (!diagram) return { notFound: true };
+
+    // Bloqueia se houver pacotes em execução ou concluídos (status >= 3)
+    if (this.repo.hasActivePackagesForStage(stageId)) return { blocked: true };
 
     const propagation = new DiagramPropagationService(this.db);
     const snapshotCtx = propagation.snapshot(building, networkId);
 
     const removed = diagram.removeStageDirect(stageId);
-    if (!removed) return false;
+    if (!removed) return { notFound: true };
 
     propagation.applyAndPersist(building, snapshotCtx);
 
     this.repo.deleteStage(stageId);
 
-    return true;
+    return { deleted: true };
   }
 
   deletePrecedence(building: Building, diagramId: string, precedenceId: string): boolean {

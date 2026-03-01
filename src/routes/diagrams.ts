@@ -256,15 +256,16 @@ export async function diagramRoutes(app: FastifyInstance): Promise<void> {
         },
         required: ['buildingId', 'diagramId', 'networkId', 'stageId'],
       },
-      response: { 204: { type: 'null' }, 404: ErrorResponse },
+      response: { 204: { type: 'null' }, 404: ErrorResponse, 409: ErrorResponse },
     },
   }, async (request, reply) => {
     const { buildingId, diagramId, networkId, stageId } = request.params as { buildingId: string; diagramId: string; networkId: string; stageId: string };
     const building = app.ctx.getBuilding(buildingId, request.user.userId);
     if (!building) return reply.status(404).send({ error: 'Building not found' });
 
-    const removed = service.deleteStage(building, diagramId, networkId, stageId);
-    if (!removed) return reply.status(404).send({ error: 'Diagram, Network or Stage not found' });
+    const result = service.deleteStage(building, diagramId, networkId, stageId);
+    if ('notFound' in result) return reply.status(404).send({ error: 'Diagram, Network or Stage not found' });
+    if ('blocked' in result) return reply.status(409).send({ error: 'Stage has active packages (executing or completed)' });
 
     return reply.status(204).send();
   });

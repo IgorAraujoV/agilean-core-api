@@ -166,4 +166,11 @@ export class StructuralRepository {
       .get(...ids);
     return row !== undefined;
   }
+
+  hasActivePackagesForStage(stageId: string): boolean {
+    const row = this.db
+      .prepare('SELECT 1 FROM packages WHERE stage_id = @stageId AND status >= 3 LIMIT 1')
+      .get({ stageId });
+    return row !== undefined;
+  }
 }
